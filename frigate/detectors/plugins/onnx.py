@@ -56,9 +56,10 @@ class OnnxDetector(DetectionApi):
             ONNX_SUPPORT
         ), f"ONNX libraries not found, {DETECTOR_KEY} detector not present"
 
-        self.conf_th = 0.5  ##TODO: model config parameter
-        self.nms_threshold = 0.4
-        # self.trt_logger = TrtLogger()
+        self.model_type = detector_config.model.model_type
+
+        self.h = detector_config.model.height
+        self.w = detector_config.model.width
 
         try:
             self.onnxruntime_session = onnxruntime.InferenceSession(
@@ -86,100 +87,15 @@ class OnnxDetector(DetectionApi):
         """Free CUDA memories."""
         del self.onnxruntime_session  # FWIW
 
-    # TODO Directly copied, merge back to a single class
-    def _postprocess_yolo(self, outputs, conf_th):
-        """Postprocess TensorRT outputs.
-        # Args
-            trt_outputs: a list of 2 or 3 tensors, where each tensor
-                        contains a multiple of 7 float32 numbers in
-                        the order of [x, y, w, h, box_confidence, class_id, class_prob]
-            conf_th: confidence threshold
-        # Returns
-            boxes, scores, classes
-        """
-        assert len(outputs) == 1
-        predictions = outputs[0]
-
-        predictions.shape[1] - 4
-
-        detections = []
-        for x in predictions:
-            j = np.argmax(x[4:, :], axis=0)
-            conf = np.take_along_axis(
-                x[4:, :], np.expand_dims(j, axis=0), axis=0
-            ).squeeze()
-            m = conf > conf_th
-            x = x[:, m]
-            conf = conf[m]
-            j = j[m]
-
-            detections.append(np.hstack((x[:4].T, conf[..., None], j[..., None])))
-
-        # filter low-conf detections and concatenate results of all yolo layers
-        # detections = []
-        # for o in trt_outputs:
-        #     dets = o.reshape((-1, 7))
-        #     dets = dets[dets[:, 4] * dets[:, 6] >= conf_th]
-        #     detections.append(dets)
-        # detections = np.concatenate(detections, axis=0)
-
-        return detections
-
     def detect_raw(self, tensor_input):
-        # Input tensor has the shape of the [height, width, 3]
-        # Output tensor of float32 of shape [20, 6] where:
-        # O - class id
-        # 1 - score
-        # 2..5 - a value between 0 and 1 of the box: [top, left, bottom, right]
-
         # normalize
         if self.input_dtype != np.uint8:
             tensor_input = tensor_input.astype(self.input_dtype)
             tensor_input /= 255.0
 
         outputs = self._do_inference(tensor_input)
-        assert len(outputs) == 1
+        assert len(outputs) == 1  # Single output tensor
+        assert len(outputs[0]) == 1  # Batch Size == 1
+        results = outputs[0][0]
 
-        raw_detections = self._postprocess_yolo(outputs, self.conf_th)
-
-        if len(raw_detections) == 0:
-            return np.zeros((20, 6), np.float32)
-
-        assert len(raw_detections) == 1
-        raw_detections = raw_detections[0]  # (xc, xy, w, h)
-
-        h, w = tensor_input.shape[-2:]
-
-        print(raw_detections[:, :4])
-        # (xc, yc, w, h) [absolute] -> (x, y, w, h) [relative]
-        raw_detections[:, 0], raw_detections[:, 2] = (
-            raw_detections[:, 0] - raw_detections[:, 2] / 2
-        ) / w, (raw_detections[:, 0] + raw_detections[:, 2] / 2) / w
-        raw_detections[:, 1], raw_detections[:, 3] = (
-            raw_detections[:, 1] - raw_detections[:, 3] / 2
-        ) / h, (raw_detections[:, 1] + raw_detections[:, 3] / 2) / h
-
-        print(raw_detections[:, :4])
-        print("---")
-
-        # raw_detections: Nx7 numpy arrays of
-        #             [[x, y, w, h, box_confidence, class_id, class_prob],
-
-        # Calculate score as box_confidence x class_prob
-        # raw_detections[:, 4] = raw_detections[:, 4] * raw_detections[:, 6]
-        # Reorder elements by the score, best on top, remove class_prob
-        ordered = raw_detections[raw_detections[:, 4].argsort()[::-1]][:, 0:6]
-        # transform width to right with clamp to 0..1
-        # ordered[:, 2] = np.clip(ordered[:, 2] + ordered[:, 0], 0, 1)
-        # transform height to bottom with clamp to 0..1
-        # ordered[:, 3] = np.clip(ordered[:, 3] + ordered[:, 1], 0, 1)
-        # put result into the correct order and limit to top 20
-        detections = ordered[:, [5, 4, 1, 0, 3, 2]][:20]
-        # pad to 20x6 shape
-        append_cnt = 20 - len(detections)
-        if append_cnt > 0:
-            detections = np.append(
-                detections, np.zeros((append_cnt, 6), np.float32), axis=0
-            )
-
-        return detections
+        return self.process_results(results)
