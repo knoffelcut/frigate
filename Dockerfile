@@ -93,7 +93,9 @@ RUN apt-get -qq update \
     && apt-get -qq install -y wget python3 python3-distutils \
     && wget -q https://bootstrap.pypa.io/get-pip.py -O get-pip.py \
     && python3 get-pip.py "pip" \
-    && pip install -r /requirements_onnx_convert.txt
+    && pip install -r /requirements_onnx_convert.txt \
+    && pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip3 install ultralytics==8.0.* --no-deps
 
 # Get OpenVino Model
 RUN yolo detect export model=yolov8n format=onnx
