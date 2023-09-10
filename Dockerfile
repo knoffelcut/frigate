@@ -287,11 +287,10 @@ ENV NV_CUDA_CUDART_VERSION=11.8.89-1
 ENV NV_CUDA_COMPAT_PACKAGE=cuda-compat-11-8
 ENV TARGETARCH=x86_64
 
-RUN apt-get update && apt-get install -y --no-install-recommends gnupg2 curl ca-certificates\
-    && \
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg2 curl ca-certificates && \
     curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/debian11/${NVARCH}/3bf863cc.pub | apt-key add - && \
     echo "deb https://developer.download.nvidia.com/compute/cuda/repos/debian11/${NVARCH} /" > /etc/apt/sources.list.d/cuda.list && \
-    && rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*
 
 ENV CUDA_VERSION=11.8.0
 
@@ -326,7 +325,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcusparse-11-8=${NV_LIBCUSPARSE_VERSION} \
     ${NV_LIBCUBLAS_PACKAGE} \
     && rm -rf /var/lib/apt/lists/*
-
 
 # CUDNN
 ENV NV_CUDNN_VERSION=8.9.0.131
