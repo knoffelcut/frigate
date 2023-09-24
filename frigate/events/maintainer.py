@@ -3,21 +3,20 @@ import logging
 import queue
 import threading
 from enum import Enum
-from multiprocessing.queues import Queue
+from multiprocessing import Queue
 from multiprocessing.synchronize import Event as MpEvent
 from typing import Dict
 
 from frigate.config import EventsConfig, FrigateConfig
 from frigate.models import Event
 from frigate.types import CameraMetricsTypes
-from frigate.util import to_relative_box
+from frigate.util.builtin import to_relative_box
 
 logger = logging.getLogger(__name__)
 
 
 class EventTypeEnum(str, Enum):
     api = "api"
-    # audio = "audio"
     tracked_object = "tracked_object"
 
 
@@ -35,6 +34,14 @@ def should_update_db(prev_event: Event, current_event: Event) -> bool:
             or prev_event["end_time"] != current_event["end_time"]
         ):
             return True
+    return False
+
+
+def should_update_state(prev_event: Event, current_event: Event) -> bool:
+    """If current event should update state, but not necessarily update the db."""
+    if prev_event["stationary"] != current_event["stationary"]:
+        return True
+
     return False
 
 
@@ -72,19 +79,21 @@ class EventProcessor(threading.Thread):
             except queue.Empty:
                 continue
 
-            logger.debug(f"Event received: {event_type} {camera} {event_data['id']}")
-
-            self.timeline_queue.put(
-                (
-                    camera,
-                    source_type,
-                    event_type,
-                    self.events_in_process.get(event_data["id"]),
-                    event_data,
-                )
+            logger.debug(
+                f"Event received: {source_type} {event_type} {camera} {event_data['id']}"
             )
 
             if source_type == EventTypeEnum.tracked_object:
+                self.timeline_queue.put(
+                    (
+                        camera,
+                        source_type,
+                        event_type,
+                        self.events_in_process.get(event_data["id"]),
+                        event_data,
+                    )
+                )
+
                 if event_type == "start":
                     self.events_in_process[event_data["id"]] = event_data
                     continue
@@ -106,8 +115,11 @@ class EventProcessor(threading.Thread):
         event_data: Event,
     ) -> None:
         """handle tracked object event updates."""
+        updated_db = False
+
         # if this is the first message, just store it and continue, its not time to insert it in the db
         if should_update_db(self.events_in_process[event_data["id"]], event_data):
+            updated_db = True
             camera_config = self.config.cameras[camera]
             event_config: EventsConfig = camera_config.record.events
             width = camera_config.detect.width
@@ -191,12 +203,14 @@ class EventProcessor(threading.Thread):
                     "score": score,
                     "top_score": event_data["top_score"],
                     "attributes": attributes,
+                    "type": "object",
                 },
             }
 
             # only overwrite the sub_label in the database if it's set
             if event_data.get("sub_label") is not None:
-                event[Event.sub_label] = event_data["sub_label"]
+                event[Event.sub_label] = event_data["sub_label"][0]
+                event[Event.data]["sub_label_score"] = event_data["sub_label"][1]
 
             (
                 Event.insert(event)
@@ -207,6 +221,10 @@ class EventProcessor(threading.Thread):
                 .execute()
             )
 
+        # check if the stored event_data should be updated
+        if updated_db or should_update_state(
+            self.events_in_process[event_data["id"]], event_data
+        ):
             # update the stored copy for comparison on future update messages
             self.events_in_process[event_data["id"]] = event_data
 
@@ -214,8 +232,8 @@ class EventProcessor(threading.Thread):
             del self.events_in_process[event_data["id"]]
             self.event_processed_queue.put((event_data["id"], camera))
 
-    def handle_external_detection(self, type: str, event_data: Event):
-        if type == "new":
+    def handle_external_detection(self, event_type: str, event_data: Event) -> None:
+        if event_type == "new":
             event = {
                 Event.id: event_data["id"],
                 Event.label: event_data["label"],
@@ -227,22 +245,20 @@ class EventProcessor(threading.Thread):
                 Event.has_clip: event_data["has_clip"],
                 Event.has_snapshot: event_data["has_snapshot"],
                 Event.zones: [],
-                Event.data: {},
+                Event.data: {
+                    "type": event_data["type"],
+                    "score": event_data["score"],
+                    "top_score": event_data["score"],
+                },
             }
-        elif type == "end":
+            Event.insert(event).execute()
+        elif event_type == "end":
             event = {
                 Event.id: event_data["id"],
                 Event.end_time: event_data["end_time"],
             }
 
-        try:
-            (
-                Event.insert(event)
-                .on_conflict(
-                    conflict_target=[Event.id],
-                    update=event,
-                )
-                .execute()
-            )
-        except Exception:
-            logger.warning(f"Failed to update manual event: {event_data['id']}")
+            try:
+                Event.update(event).where(Event.id == event_data["id"]).execute()
+            except Exception:
+                logger.warning(f"Failed to update manual event: {event_data['id']}")

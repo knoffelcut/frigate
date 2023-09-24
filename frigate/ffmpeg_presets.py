@@ -5,8 +5,7 @@ import os
 from enum import Enum
 from typing import Any
 
-from frigate.const import BTBN_PATH
-from frigate.util import vainfo_hwaccel
+from frigate.util.services import vainfo_hwaccel
 from frigate.version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,11 @@ class LibvaGpuSelector:
         return ""
 
 
-TIMEOUT_PARAM = "-timeout" if os.path.exists(BTBN_PATH) else "-stimeout"
+TIMEOUT_PARAM = (
+    "-timeout"
+    if int(os.getenv("LIBAVFORMAT_VERSION_MAJOR", "59")) >= 59
+    else "-stimeout"
+)
 
 _gpu_selector = LibvaGpuSelector()
 _user_agent_args = [
@@ -52,69 +55,29 @@ _user_agent_args = [
 ]
 
 PRESETS_HW_ACCEL_DECODE = {
-    "preset-rpi-32-h264": ["-c:v:1", "h264_v4l2m2m"],
-    "preset-rpi-64-h264": ["-c:v:1", "h264_v4l2m2m"],
-    "preset-vaapi": [
-        "-hwaccel_flags",
-        "allow_profile_mismatch",
-        "-hwaccel",
-        "vaapi",
-        "-hwaccel_device",
-        _gpu_selector.get_selected_gpu(),
-        "-hwaccel_output_format",
-        "vaapi",
-    ],
-    "preset-intel-qsv-h264": [
-        "-hwaccel",
-        "qsv",
-        "-qsv_device",
-        _gpu_selector.get_selected_gpu(),
-        "-hwaccel_output_format",
-        "qsv",
-        "-c:v",
-        "h264_qsv",
-    ],
-    "preset-intel-qsv-h265": [
-        "-load_plugin",
-        "hevc_hw",
-        "-hwaccel",
-        "qsv",
-        "-qsv_device",
-        _gpu_selector.get_selected_gpu(),
-        "-hwaccel_output_format",
-        "qsv",
-        "-c:v",
-        "hevc_qsv",
-    ],
-    "preset-nvidia-h264": [
-        "-hwaccel",
-        "cuda",
-        "-hwaccel_output_format",
-        "cuda",
-    ],
-    "preset-nvidia-h265": [
-        "-hwaccel",
-        "cuda",
-        "-hwaccel_output_format",
-        "cuda",
-    ],
-    "preset-nvidia-mjpeg": [
-        "-hwaccel",
-        "cuda",
-        "-hwaccel_output_format",
-        "cuda",
-    ],
+    "preset-rpi-32-h264": "-c:v:1 h264_v4l2m2m",
+    "preset-rpi-64-h264": "-c:v:1 h264_v4l2m2m",
+    "preset-vaapi": f"-hwaccel_flags allow_profile_mismatch -hwaccel vaapi -hwaccel_device {_gpu_selector.get_selected_gpu()} -hwaccel_output_format vaapi",
+    "preset-intel-qsv-h264": f"-hwaccel qsv -qsv_device {_gpu_selector.get_selected_gpu()} -hwaccel_output_format qsv -c:v h264_qsv",
+    "preset-intel-qsv-h265": f"-load_plugin hevc_hw -hwaccel qsv -qsv_device {_gpu_selector.get_selected_gpu()} -hwaccel_output_format qsv -c:v hevc_qsv",
+    "preset-nvidia-h264": "-hwaccel cuda -hwaccel_output_format cuda",
+    "preset-nvidia-h265": "-hwaccel cuda -hwaccel_output_format cuda",
+    "preset-nvidia-mjpeg": "-hwaccel cuda -hwaccel_output_format cuda",
+    "preset-jetson-h264": "-c:v h264_nvmpi -resize {1}x{2}",
+    "preset-jetson-h265": "-c:v hevc_nvmpi -resize {1}x{2}",
 }
 
 PRESETS_HW_ACCEL_SCALE = {
-    "preset-rpi-32-h264": "-r {0} -s {1}x{2}",
-    "preset-rpi-64-h264": "-r {0} -s {1}x{2}",
+    "preset-rpi-32-h264": "-r {0} -vf fps={0},scale={1}:{2}",
+    "preset-rpi-64-h264": "-r {0} -vf fps={0},scale={1}:{2}",
     "preset-vaapi": "-r {0} -vf fps={0},scale_vaapi=w={1}:h={2},hwdownload,format=yuv420p",
     "preset-intel-qsv-h264": "-r {0} -vf vpp_qsv=framerate={0}:w={1}:h={2}:format=nv12,hwdownload,format=nv12,format=yuv420p",
     "preset-intel-qsv-h265": "-r {0} -vf vpp_qsv=framerate={0}:w={1}:h={2}:format=nv12,hwdownload,format=nv12,format=yuv420p",
     "preset-nvidia-h264": "-r {0} -vf fps={0},scale_cuda=w={1}:h={2}:format=nv12,hwdownload,format=nv12,format=yuv420p",
     "preset-nvidia-h265": "-r {0} -vf fps={0},scale_cuda=w={1}:h={2}:format=nv12,hwdownload,format=nv12,format=yuv420p",
-    "default": "-r {0} -s {1}x{2}",
+    "preset-jetson-h264": "-r {0}",  # scaled in decoder
+    "preset-jetson-h265": "-r {0}",  # scaled in decoder
+    "default": "-r {0} -vf fps={0},scale={1}:{2}",
 }
 
 PRESETS_HW_ACCEL_ENCODE_BIRDSEYE = {
@@ -125,6 +88,8 @@ PRESETS_HW_ACCEL_ENCODE_BIRDSEYE = {
     "preset-intel-qsv-h265": "ffmpeg -hide_banner {0} -c:v h264_qsv -g 50 -bf 0 -profile:v high -level:v 4.1 -async_depth:v 1 {1}",
     "preset-nvidia-h264": "ffmpeg -hide_banner {0} -c:v h264_nvenc -g 50 -profile:v high -level:v auto -preset:v p2 -tune:v ll {1}",
     "preset-nvidia-h265": "ffmpeg -hide_banner {0} -c:v h264_nvenc -g 50 -profile:v high -level:v auto -preset:v p2 -tune:v ll {1}",
+    "preset-jetson-h264": "ffmpeg -hide_banner {0} -c:v h264_nvmpi -profile high {1}",
+    "preset-jetson-h265": "ffmpeg -hide_banner {0} -c:v h264_nvmpi -profile high {1}",
     "default": "ffmpeg -hide_banner {0} -c:v libx264 -g 50 -profile:v high -level:v 4.1 -preset:v superfast -tune:v zerolatency {1}",
 }
 
@@ -136,16 +101,28 @@ PRESETS_HW_ACCEL_ENCODE_TIMELAPSE = {
     "preset-intel-qsv-h265": "ffmpeg -hide_banner {0} -c:v hevc_qsv -g 50 -bf 0 -profile:v high -level:v 4.1 -async_depth:v 1 {1}",
     "preset-nvidia-h264": "ffmpeg -hide_banner -hwaccel cuda -hwaccel_output_format cuda -extra_hw_frames 8 {0} -c:v h264_nvenc {1}",
     "preset-nvidia-h265": "ffmpeg -hide_banner -hwaccel cuda -hwaccel_output_format cuda -extra_hw_frames 8 {0} -c:v hevc_nvenc {1}",
+    "preset-jetson-h264": "ffmpeg -hide_banner {0} -c:v h264_nvmpi -profile high {1}",
+    "preset-jetson-h265": "ffmpeg -hide_banner {0} -c:v hevc_nvmpi -profile high {1}",
     "default": "ffmpeg -hide_banner {0} -c:v libx264 -preset:v ultrafast -tune:v zerolatency {1}",
 }
 
 
-def parse_preset_hardware_acceleration_decode(arg: Any) -> list[str]:
+def parse_preset_hardware_acceleration_decode(
+    arg: Any,
+    fps: int,
+    width: int,
+    height: int,
+) -> list[str]:
     """Return the correct preset if in preset format otherwise return None."""
     if not isinstance(arg, str):
         return None
 
-    return PRESETS_HW_ACCEL_DECODE.get(arg, None)
+    decode = PRESETS_HW_ACCEL_DECODE.get(arg, None)
+
+    if not decode:
+        return None
+
+    return decode.format(fps, width, height).split(" ")
 
 
 def parse_preset_hardware_acceleration_scale(
@@ -157,20 +134,13 @@ def parse_preset_hardware_acceleration_scale(
 ) -> list[str]:
     """Return the correct scaling preset or default preset if none is set."""
     if not isinstance(arg, str) or " " in arg:
-        scale = PRESETS_HW_ACCEL_SCALE["default"].format(fps, width, height).split(" ")
-        scale.extend(detect_args)
-        return scale
-
-    scale = PRESETS_HW_ACCEL_SCALE.get(arg, "")
-
-    if scale:
-        scale = scale.format(fps, width, height).split(" ")
-        scale.extend(detect_args)
-        return scale
+        scale = PRESETS_HW_ACCEL_SCALE["default"]
     else:
-        scale = scale.format(fps, width, height).split(" ")
-        scale.extend(detect_args)
-        return scale
+        scale = PRESETS_HW_ACCEL_SCALE.get(arg, "")
+
+    scale = scale.format(fps, width, height).split(" ")
+    scale.extend(detect_args)
+    return scale
 
 
 class EncodeTypeEnum(str, Enum):
@@ -189,6 +159,10 @@ def parse_preset_hardware_acceleration_encode(
 
     if not isinstance(arg, str):
         return arg_map["default"].format(input, output)
+
+    # Not all jetsons have HW encoders, so fall back to default SW encoder if not
+    if arg.startswith("preset-jetson-") and not os.path.exists("/dev/nvhost-msenc"):
+        arg = "default"
 
     return arg_map.get(arg, arg_map["default"]).format(
         input,
@@ -281,6 +255,13 @@ PRESETS_INPUT = {
         "5000000",
         "-use_wallclock_as_timestamps",
         "1",
+    ],
+    "preset-rtsp-audio-only": [
+        "-rtsp_transport",
+        "tcp",
+        TIMEOUT_PARAM,
+        "5000000",
+        "-vn",
     ],
     "preset-rtsp-restream": _user_agent_args
     + [

@@ -1,6 +1,7 @@
+from multiprocessing import Queue
 from multiprocessing.context import Process
-from multiprocessing.queues import Queue
 from multiprocessing.sharedctypes import Synchronized
+from multiprocessing.synchronize import Event
 from typing import Optional, TypedDict
 
 from frigate.object_detection import ObjectDetectProcess
@@ -24,7 +25,16 @@ class CameraMetricsTypes(TypedDict):
     skipped_fps: Synchronized
 
 
-class RecordMetricsTypes(TypedDict):
+class PTZMetricsTypes(TypedDict):
+    ptz_autotracker_enabled: Synchronized
+    ptz_stopped: Event
+    ptz_reset: Event
+    ptz_start_time: Synchronized
+    ptz_stop_time: Synchronized
+
+
+class FeatureMetricsTypes(TypedDict):
+    audio_enabled: Synchronized
     record_enabled: Synchronized
 
 

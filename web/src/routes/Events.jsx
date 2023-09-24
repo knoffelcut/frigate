@@ -29,6 +29,8 @@ import { formatUnixTimestampToDateTime, getDurationFromTimestamps } from '../uti
 import TimeAgo from '../components/TimeAgo';
 import Timepicker from '../components/TimePicker';
 import TimelineSummary from '../components/TimelineSummary';
+import TimelineEventOverlay from '../components/TimelineEventOverlay';
+import { Score } from '../icons/Score';
 
 const API_LIMIT = 25;
 
@@ -106,6 +108,7 @@ export default function Events({ path, ...props }) {
 
   const { data: config } = useSWR('config');
 
+  const { data: allLabels } = useSWR(['labels']);
   const { data: allSubLabels } = useSWR(['sub_labels', { split_joined: 1 }]);
 
   const filterValues = useMemo(
@@ -120,15 +123,10 @@ export default function Events({ path, ...props }) {
           .filter((value, i, self) => self.indexOf(value) === i),
         'None',
       ],
-      labels: Object.values(config?.cameras || {})
-        .reduce((memo, camera) => {
-          memo = memo.concat(camera?.objects?.track || []);
-          return memo;
-        }, config?.objects?.track || [])
-        .filter((value, i, self) => self.indexOf(value) === i),
+      labels: Object.values(allLabels || {}),
       sub_labels: (allSubLabels || []).length > 0 ? [...Object.values(allSubLabels), 'None'] : [],
     }),
-    [config, allSubLabels]
+    [config, allLabels, allSubLabels]
   );
 
   const onSave = async (e, eventId, save) => {
@@ -391,7 +389,7 @@ export default function Events({ path, ...props }) {
               download
             />
           )}
-          {downloadEvent.end_time && downloadEvent.has_snapshot && !downloadEvent.plus_id && (
+          {(event?.data?.type || "object") == "object" && downloadEvent.end_time && downloadEvent.has_snapshot && !downloadEvent.plus_id && (
             <MenuItem
               icon={UploadPlus}
               label={uploading.includes(downloadEvent.id) ? 'Uploading...' : 'Send to Frigate+'}
@@ -605,13 +603,10 @@ export default function Events({ path, ...props }) {
                     <div className="m-2 flex grow">
                       <div className="flex flex-col grow">
                         <div className="capitalize text-lg font-bold">
-                          {event.sub_label
-                            ? `${event.label.replaceAll('_', ' ')}: ${event.sub_label.replaceAll('_', ' ')}`
-                            : event.label.replaceAll('_', ' ')}
-                          {(event?.data?.top_score || event.top_score || 0) == 0
-                            ? null
-                            : ` (${((event?.data?.top_score || event.top_score) * 100).toFixed(0)}%)`}
+                          {event.label.replaceAll('_', ' ')}
+                          {event.sub_label ? `: ${event.sub_label.replaceAll('_', ' ')}` : null}
                         </div>
+
                         <div className="text-sm flex">
                           <Clock className="h-5 w-5 mr-2 inline" />
                           {formatUnixTimestampToDateTime(event.start_time, { ...config.ui })}
@@ -627,13 +622,22 @@ export default function Events({ path, ...props }) {
                           <Camera className="h-5 w-5 mr-2 inline" />
                           {event.camera.replaceAll('_', ' ')}
                         </div>
-                        <div className="capitalize  text-sm flex align-center">
+                        {event.zones.length ? <div className="capitalize  text-sm flex align-center">
                           <Zone className="w-5 h-5 mr-2 inline" />
                           {event.zones.join(', ').replaceAll('_', ' ')}
+                        </div> : null}
+                        <div className="capitalize  text-sm flex align-center">
+                          <Score className="w-5 h-5 mr-2 inline" />
+                          {(event?.data?.top_score || event.top_score || 0) == 0
+                            ? null
+                            : `${event.label}: ${((event?.data?.top_score || event.top_score) * 100).toFixed(0)}%`}
+                          {(event?.data?.sub_label_score || 0) == 0
+                            ? null
+                            : `, ${event.sub_label}: ${(event?.data?.sub_label_score * 100).toFixed(0)}%`}
                         </div>
                       </div>
                       <div class="hidden sm:flex flex-col justify-end mr-2">
-                        {event.end_time && event.has_snapshot && (
+                        {event.end_time && event.has_snapshot && (event?.data?.type || "object") == "object" && (
                           <Fragment>
                             {event.plus_id ? (
                               <div className="uppercase text-xs underline">
@@ -721,23 +725,10 @@ export default function Events({ path, ...props }) {
                                   }}
                                 >
                                   {eventOverlay ? (
-                                    <div
-                                      className="absolute border-4 border-red-600"
-                                      style={{
-                                        left: `${Math.round(eventOverlay.data.box[0] * 100)}%`,
-                                        top: `${Math.round(eventOverlay.data.box[1] * 100)}%`,
-                                        right: `${Math.round(
-                                          (1 - eventOverlay.data.box[2] - eventOverlay.data.box[0]) * 100
-                                        )}%`,
-                                        bottom: `${Math.round(
-                                          (1 - eventOverlay.data.box[3] - eventOverlay.data.box[1]) * 100
-                                        )}%`,
-                                      }}
-                                    >
-                                      {eventOverlay.class_type == 'entered_zone' ? (
-                                        <div className="absolute w-2 h-2 bg-yellow-500 left-[50%] -translate-x-1/2 translate-y-3/4 bottom-0" />
-                                      ) : null}
-                                    </div>
+                                    <TimelineEventOverlay
+                                      eventOverlay={eventOverlay}
+                                      cameraConfig={config.cameras[event.camera]}
+                                    />
                                   ) : null}
                                 </VideoPlayer>
                               </div>

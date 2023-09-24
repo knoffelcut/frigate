@@ -17,11 +17,12 @@ from frigate.config import FrigateConfig
 from frigate.const import CACHE_DIR, CLIPS_DIR, DRIVER_AMD, DRIVER_ENV_VAR, RECORD_DIR
 from frigate.object_detection import ObjectDetectProcess
 from frigate.types import CameraMetricsTypes, StatsTrackingTypes
-from frigate.util import (
+from frigate.util.services import (
     get_amd_gpu_stats,
     get_bandwidth_stats,
     get_cpu_stats,
     get_intel_gpu_stats,
+    get_jetson_stats,
     get_nvidia_gpu_stats,
 )
 from frigate.version import VERSION
@@ -180,6 +181,15 @@ async def set_gpu_stats(
             else:
                 stats["nvidia-gpu"] = {"gpu": -1, "mem": -1}
                 hwaccel_errors.append(args)
+        elif "nvmpi" in args or "jetson" in args:
+            # nvidia Jetson
+            jetson_usage = get_jetson_stats()
+
+            if jetson_usage:
+                stats["jetson-gpu"] = jetson_usage
+            else:
+                stats["jetson-gpu"] = {"gpu": -1, "mem": -1}
+                hwaccel_errors.append(args)
         elif "qsv" in args:
             if not config.telemetry.stats.intel_gpu_stats:
                 continue
@@ -262,8 +272,12 @@ def stats_snapshot(
     for name, detector in stats_tracking["detectors"].items():
         pid = detector.detect_process.pid if detector.detect_process else None
         stats["detectors"][name] = {
-            "inference_speed": round(detector.avg_inference_speed.value * 1000, 2),
-            "detection_start": detector.detection_start.value,
+            "inference_speed": round(detector.avg_inference_speed.value * 1000, 2),  # type: ignore[attr-defined]
+            # issue https://github.com/python/typeshed/issues/8799
+            # from mypy 0.981 onwards
+            "detection_start": detector.detection_start.value,  # type: ignore[attr-defined]
+            # issue https://github.com/python/typeshed/issues/8799
+            # from mypy 0.981 onwards
             "pid": pid,
         }
     stats["detection_fps"] = round(total_detection_fps, 2)

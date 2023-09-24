@@ -1,6 +1,6 @@
 ---
 id: index
-title: Configuration File
+title: Frigate Configuration Reference
 ---
 
 For Home Assistant Addon installations, the config file needs to be in the root of your Home Assistant config directory (same location as `configuration.yaml`). It can be named `frigate.yaml` or `frigate.yml`, but if both files exist `frigate.yaml` will be preferred and `frigate.yml` will be ignored.
@@ -19,9 +19,6 @@ cameras:
         - path: rtsp://viewer:{FRIGATE_RTSP_PASSWORD}@10.0.10.10:554/cam/realmonitor?channel=1&subtype=2
           roles:
             - detect
-    detect:
-      width: 1280
-      height: 720
 ```
 
 ### VSCode Configuration Schema
@@ -104,7 +101,7 @@ detectors:
   # Required: name of the detector
   detector_name:
     # Required: type of the detector
-    # Frigate provided types include 'cpu', 'edgetpu', and 'openvino' (default: shown below)
+    # Frigate provided types include 'cpu', 'edgetpu', 'openvino' and 'tensorrt' (default: shown below)
     # Additional detector types can also be plugged in.
     # Detectors may require additional configuration.
     # Refer to the Detectors configuration page for more information.
@@ -137,6 +134,32 @@ model:
   # Optional: Label name modifications. These are merged into the standard labelmap.
   labelmap:
     2: vehicle
+
+# Optional: Audio Events Configuration
+# NOTE: Can be overridden at the camera level
+audio:
+  # Optional: Enable audio events (default: shown below)
+  enabled: False
+  # Optional: Configure the amount of seconds without detected audio to end the event (default: shown below)
+  max_not_heard: 30
+  # Optional: Configure the min rms volume required to run audio detection (default: shown below)
+  # As a rule of thumb:
+  #  - 200 - high sensitivity
+  #  - 500 - medium sensitivity
+  #  - 1000 - low sensitivity
+  min_volume: 500
+  # Optional: Types of audio to listen for (default: shown below)
+  listen:
+    - bark
+    - scream
+    - speech
+    - yell
+  # Optional: Filters to configure detection.
+  filters:
+    # Label that matches label in listen config.
+    speech:
+      # Minimum score that triggers an audio event (default: shown below)
+      threshold: 0.8
 
 # Optional: logger verbosity settings
 logger:
@@ -189,6 +212,11 @@ ffmpeg:
     record: preset-record-generic
     # Optional: output args for rtmp streams (default: shown below)
     rtmp: preset-rtmp-generic
+  # Optional: Time in seconds to wait before ffmpeg retries connecting to the camera. (default: shown below)
+  # If set too low, frigate will retry a connection to the camera's stream too frequently, using up the limited streams some cameras can allow at once
+  # If set too high, then if a ffmpeg crash or camera stream timeout occurs, you could potentially lose up to a maximum of retry_interval second(s) of footage
+  # NOTE: this can be a useful setting for Wireless / Battery cameras to reduce how much footage is potentially lost during a connection timeout.
+  retry_interval: 10
 
 # Optional: Detect configuration
 # NOTE: Can be overridden at the camera level
@@ -230,7 +258,7 @@ detect:
   # especially when using separate streams for detect and record.
   # Use this setting to make the timeline bounding boxes more closely align
   # with the recording. The value can be positive or negative.
-  # TIP: Imagine there is an event clip with a person walking from left to right. 
+  # TIP: Imagine there is an event clip with a person walking from left to right.
   #      If the event timeline bounding box is consistently to the left of the person
   #      then the value should be decreased. Similarly, if a person is walking from
   #      left to right and the bounding box is consistently ahead of the person
@@ -275,7 +303,7 @@ motion:
   # Optional: The threshold passed to cv2.threshold to determine if a pixel is different enough to be counted as motion. (default: shown below)
   # Increasing this value will make motion detection less sensitive and decreasing it will make motion detection more sensitive.
   # The value should be between 1 and 255.
-  threshold: 40
+  threshold: 30
   # Optional: The percentage of the image used to detect lightning or other substantial changes where motion detection
   #           needs to recalibrate. (default: shown below)
   # Increasing this value will make motion detection more likely to consider lightning or ir mode changes as valid motion.
@@ -286,19 +314,19 @@ motion:
   # Increasing this value will prevent smaller areas of motion from being detected. Decreasing will
   # make motion detection more sensitive to smaller moving objects.
   # As a rule of thumb:
-  #  - 15 - high sensitivity
+  #  - 10 - high sensitivity
   #  - 30 - medium sensitivity
   #  - 50 - low sensitivity
-  contour_area: 15
+  contour_area: 10
   # Optional: Alpha value passed to cv2.accumulateWeighted when averaging frames to determine the background (default: shown below)
   # Higher values mean the current frame impacts the average a lot, and a new object will be averaged into the background faster.
   # Low values will cause things like moving shadows to be detected as motion for longer.
   # https://www.geeksforgeeks.org/background-subtraction-in-an-image-using-concept-of-running-average/
-  frame_alpha: 0.02
+  frame_alpha: 0.01
   # Optional: Height of the resized motion frame  (default: 50)
   # Higher values will result in more granular motion detection at the expense of higher CPU usage.
   # Lower values result in less CPU, but small changes may not register as motion.
-  frame_height: 50
+  frame_height: 100
   # Optional: motion mask
   # NOTE: see docs for more detailed info on creating masks
   mask: 0,900,1080,900,1080,1920,0,1920
@@ -319,6 +347,8 @@ record:
   # Optional: Number of minutes to wait between cleanup runs (default: shown below)
   # This can be used to reduce the frequency of deleting recording segments from disk if you want to minimize i/o
   expire_interval: 60
+  # Optional: Sync recordings with disk on startup (default: shown below).
+  sync_on_startup: False
   # Optional: Retention settings for recording
   retain:
     # Optional: Number of days to retain recordings regardless of events (default: shown below)
@@ -384,6 +414,8 @@ snapshots:
     # Optional: Per object retention days
     objects:
       person: 15
+  # Optional: quality of the encoded jpeg, 0-100 (default: shown below)
+  quality: 70
 
 # Optional: RTMP configuration
 # NOTE: RTMP is deprecated in favor of restream
@@ -393,7 +425,7 @@ rtmp:
   enabled: False
 
 # Optional: Restream configuration
-# Uses https://github.com/AlexxIT/go2rtc (v1.5.0)
+# Uses https://github.com/AlexxIT/go2rtc (v1.6.2)
 go2rtc:
 
 # Optional: jsmpeg stream configuration for WebUI
@@ -448,10 +480,11 @@ cameras:
         # Required: the path to the stream
         # NOTE: path may include environment variables, which must begin with 'FRIGATE_' and be referenced in {}
         - path: rtsp://viewer:{FRIGATE_RTSP_PASSWORD}@10.0.10.10:554/cam/realmonitor?channel=1&subtype=2
-          # Required: list of roles for this stream. valid values are: detect,record,rtmp
-          # NOTICE: In addition to assigning the record and rtmp roles,
+          # Required: list of roles for this stream. valid values are: audio,detect,record,rtmp
+          # NOTICE: In addition to assigning the audio, record, and rtmp roles,
           # they must also be enabled in the camera config.
           roles:
+            - audio
             - detect
             - record
             - rtmp
@@ -535,6 +568,21 @@ cameras:
       user: admin
       # Optional: password for login.
       password: admin
+      # Optional: PTZ camera object autotracking. Keeps a moving object in
+      # the center of the frame by automatically moving the PTZ camera.
+      autotracking:
+        # Optional: enable/disable object autotracking. (default: shown below)
+        enabled: False
+        # Optional: list of objects to track from labelmap.txt (default: shown below)
+        track:
+          - person
+        # Required: Begin automatically tracking an object when it enters any of the listed zones.
+        required_zones:
+          - zone_name
+        # Required: Name of ONVIF preset in camera's firmware to return to when tracking is over. (default: shown below)
+        return_preset: preset_name
+        # Optional: Seconds to delay before returning to preset. (default: shown below)
+        timeout: 10
 
     # Optional: Configuration for how to sort the cameras in the Birdseye view.
     birdseye:

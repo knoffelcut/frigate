@@ -1,6 +1,6 @@
 ---
 id: cameras
-title: Cameras
+title: Camera Configuration
 ---
 
 ## Setting Up Camera Inputs
@@ -33,8 +33,8 @@ cameras:
           roles:
             - record
     detect:
-      width: 1280
-      height: 720
+      width: 1280 # <- optional, by default Frigate tries to automatically detect resolution
+      height: 720 # <- optional, by default Frigate tries to automatically detect resolution
 ```
 
 Additional cameras are simply added to the config under the `cameras` entry.
@@ -66,3 +66,5 @@ cameras:
 ```
 
 then PTZ controls will be available in the cameras WebUI.
+
+An ONVIF-capable camera that supports relative movement within the field of view (FOV) can also be configured to automatically track moving objects and keep them in the center of the frame. For autotracking setup, see the [autotracking](autotracking.md) docs.

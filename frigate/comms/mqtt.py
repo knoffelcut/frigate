@@ -41,12 +41,17 @@ class MqttClient(Communicator):  # type: ignore[misc]
         for camera_name, camera in self.config.cameras.items():
             self.publish(
                 f"{camera_name}/recordings/state",
-                "ON" if camera.record.enabled else "OFF",
+                "ON" if camera.record.enabled_in_config else "OFF",
                 retain=True,
             )
             self.publish(
                 f"{camera_name}/snapshots/state",
                 "ON" if camera.snapshots.enabled else "OFF",
+                retain=True,
+            )
+            self.publish(
+                f"{camera_name}/audio/state",
+                "ON" if camera.audio.enabled_in_config else "OFF",
                 retain=True,
             )
             self.publish(
@@ -62,6 +67,11 @@ class MqttClient(Communicator):  # type: ignore[misc]
             self.publish(
                 f"{camera_name}/improve_contrast/state",
                 "ON" if camera.motion.improve_contrast else "OFF",  # type: ignore[union-attr]
+                retain=True,
+            )
+            self.publish(
+                f"{camera_name}/ptz_autotracker/state",
+                "ON" if camera.onvif.autotracking.enabled else "OFF",
                 retain=True,
             )
             self.publish(
@@ -144,8 +154,10 @@ class MqttClient(Communicator):  # type: ignore[misc]
             "recordings",
             "snapshots",
             "detect",
+            "audio",
             "motion",
             "improve_contrast",
+            "ptz_autotracker",
             "motion_threshold",
             "motion_contour_area",
         ]

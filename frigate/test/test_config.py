@@ -9,7 +9,7 @@ from frigate.config import BirdseyeModeEnum, FrigateConfig
 from frigate.const import MODEL_CACHE_DIR
 from frigate.detectors import DetectorTypeEnum
 from frigate.plus import PlusApi
-from frigate.util import deep_merge, load_config_with_no_duplicates
+from frigate.util.builtin import deep_merge, load_config_with_no_duplicates
 
 
 class TestConfig(unittest.TestCase):
@@ -730,7 +730,7 @@ class TestConfig(unittest.TestCase):
         assert config == frigate_config.dict(exclude_unset=True)
 
         runtime_config = frigate_config.runtime_config()
-        assert runtime_config.cameras["back"].motion.frame_height == 50
+        assert runtime_config.cameras["back"].motion.frame_height == 100
 
     def test_motion_contour_area_dynamic(self):
         config = {
@@ -758,7 +758,7 @@ class TestConfig(unittest.TestCase):
         assert config == frigate_config.dict(exclude_unset=True)
 
         runtime_config = frigate_config.runtime_config()
-        assert round(runtime_config.cameras["back"].motion.contour_area) == 15
+        assert round(runtime_config.cameras["back"].motion.contour_area) == 10
 
     def test_merge_labelmap(self):
         config = {

@@ -7,13 +7,13 @@ import signal
 import threading
 from collections import deque
 from logging import handlers
-from multiprocessing.queues import Queue
+from multiprocessing import Queue
 from types import FrameType
 from typing import Deque, Optional
 
 from setproctitle import setproctitle
 
-from frigate.util import clean_camera_user_pass
+from frigate.util.builtin import clean_camera_user_pass
 
 
 def listener_configurer() -> None:

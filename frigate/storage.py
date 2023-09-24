@@ -42,21 +42,21 @@ class StorageMaintainer(threading.Thread):
                     )
                 }
 
-            # calculate MB/hr
-            try:
-                bandwidth = round(
-                    Recordings.select(fn.AVG(bandwidth_equation))
-                    .where(Recordings.camera == camera, Recordings.segment_size > 0)
-                    .limit(100)
-                    .scalar()
-                    * 3600,
-                    2,
-                )
-            except TypeError:
-                bandwidth = 0
+                # calculate MB/hr
+                try:
+                    bandwidth = round(
+                        Recordings.select(fn.AVG(bandwidth_equation))
+                        .where(Recordings.camera == camera, Recordings.segment_size > 0)
+                        .limit(100)
+                        .scalar()
+                        * 3600,
+                        2,
+                    )
+                except TypeError:
+                    bandwidth = 0
 
-            self.camera_storage_stats[camera]["bandwidth"] = bandwidth
-            logger.debug(f"{camera} has a bandwidth of {bandwidth} MiB/hr.")
+                self.camera_storage_stats[camera]["bandwidth"] = bandwidth
+                logger.debug(f"{camera} has a bandwidth of {bandwidth} MiB/hr.")
 
     def calculate_camera_usages(self) -> dict[str, dict]:
         """Calculate the storage usage of each camera."""
@@ -153,7 +153,7 @@ class StorageMaintainer(threading.Thread):
         # check if need to delete retained segments
         if deleted_segments_size < hourly_bandwidth:
             logger.error(
-                f"Could not clear {hourly_bandwidth} currently {deleted_segments_size}, retained recordings must be deleted."
+                f"Could not clear {hourly_bandwidth} MB, currently {deleted_segments_size} MB have been cleared. Retained recordings must be deleted."
             )
             recordings = Recordings.select().order_by(Recordings.start_time.asc())
 
@@ -185,6 +185,9 @@ class StorageMaintainer(threading.Thread):
                 logger.debug(f"Default camera bandwidths: {self.camera_storage_stats}.")
 
             if self.check_storage_needs_cleanup():
+                logger.info(
+                    "Less than 1 hour of recording space left, running storage maintenance..."
+                )
                 self.reduce_storage_consumption()
 
         logger.info("Exiting storage maintainer...")

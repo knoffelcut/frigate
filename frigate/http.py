@@ -24,27 +24,33 @@ from flask import (
     make_response,
     request,
 )
-from peewee import DoesNotExist, SqliteDatabase, fn, operator
+from peewee import DoesNotExist, fn, operator
 from playhouse.shortcuts import model_to_dict
+from playhouse.sqliteq import SqliteQueueDatabase
 from tzlocal import get_localzone_name
 
 from frigate.config import FrigateConfig
-from frigate.const import CLIPS_DIR, MAX_SEGMENT_DURATION, RECORD_DIR
+from frigate.const import (
+    CACHE_DIR,
+    CLIPS_DIR,
+    CONFIG_DIR,
+    MAX_SEGMENT_DURATION,
+    RECORD_DIR,
+)
 from frigate.events.external import ExternalEventProcessor
 from frigate.models import Event, Recordings, Timeline
 from frigate.object_processing import TrackedObject
 from frigate.plus import PlusApi
-from frigate.ptz import OnvifController
+from frigate.ptz.onvif import OnvifController
 from frigate.record.export import PlaybackFactorEnum, RecordingExporter
 from frigate.stats import stats_snapshot
 from frigate.storage import StorageMaintainer
-from frigate.util import (
+from frigate.util.builtin import (
     clean_camera_user_pass,
-    ffprobe_stream,
     get_tz_modifiers,
-    restart_frigate,
-    vainfo_hwaccel,
+    update_yaml_from_url,
 )
+from frigate.util.services import ffprobe_stream, restart_frigate, vainfo_hwaccel
 from frigate.version import VERSION
 
 logger = logging.getLogger(__name__)
@@ -54,7 +60,7 @@ bp = Blueprint("frigate", __name__)
 
 def create_app(
     frigate_config,
-    database: SqliteDatabase,
+    database: SqliteQueueDatabase,
     stats_tracking,
     detected_frames_processor,
     storage_maintainer: StorageMaintainer,
@@ -370,10 +376,9 @@ def set_sub_label(id):
             jsonify({"success": False, "message": "Event " + id + " not found"}), 404
         )
 
-    if request.json:
-        new_sub_label = request.json.get("subLabel")
-    else:
-        new_sub_label = None
+    json: dict[str, any] = request.get_json(silent=True) or {}
+    new_sub_label = json.get("subLabel")
+    new_score = json.get("subLabelScore")
 
     if new_sub_label and len(new_sub_label) > 100:
         return make_response(
@@ -387,6 +392,18 @@ def set_sub_label(id):
             400,
         )
 
+    if new_score is not None and (new_score > 1.0 or new_score < 0):
+        return make_response(
+            jsonify(
+                {
+                    "success": False,
+                    "message": new_score
+                    + " does not fit within the expected bounds 0 <= score <= 1.0",
+                }
+            ),
+            400,
+        )
+
     if not event.end_time:
         tracked_obj: TrackedObject = (
             current_app.detected_frames_processor.camera_states[
@@ -395,9 +412,15 @@ def set_sub_label(id):
         )
 
         if tracked_obj:
-            tracked_obj.obj_data["sub_label"] = new_sub_label
+            tracked_obj.obj_data["sub_label"] = (new_sub_label, new_score)
 
     event.sub_label = new_sub_label
+
+    if new_score:
+        data = event.data
+        data["sub_label_score"] = new_score
+        event.data = data
+
     event.save()
     return make_response(
         jsonify(
@@ -410,6 +433,24 @@ def set_sub_label(id):
     )
 
 
+@bp.route("/labels")
+def get_labels():
+    camera = request.args.get("camera", type=str, default="")
+
+    try:
+        if camera:
+            events = Event.select(Event.label).where(Event.camera == camera).distinct()
+        else:
+            events = Event.select(Event.label).distinct()
+    except Exception as e:
+        return make_response(
+            jsonify({"success": False, "message": f"Failed to get labels: {e}"}), 404
+        )
+
+    labels = sorted([e.label for e in events])
+    return jsonify(labels)
+
+
 @bp.route("/sub_labels")
 def get_sub_labels():
     split_joined = request.args.get("split_joined", type=int)
@@ -417,8 +458,9 @@ def get_sub_labels():
     try:
         events = Event.select(Event.sub_label).distinct()
     except Exception as e:
-        return jsonify(
-            {"success": False, "message": f"Failed to get sub_labels: {e}"}, "404"
+        return make_response(
+            jsonify({"success": False, "message": f"Failed to get sub_labels: {e}"}),
+            404,
         )
 
     sub_labels = [e.sub_label for e in events]
@@ -557,24 +599,14 @@ def timeline():
 @bp.route("/<camera_name>/<label>/thumbnail.jpg")
 def label_thumbnail(camera_name, label):
     label = unquote(label)
-    if label == "any":
-        event_query = (
-            Event.select()
-            .where(Event.camera == camera_name)
-            .order_by(Event.start_time.desc())
-        )
-    else:
-        event_query = (
-            Event.select()
-            .where(Event.camera == camera_name)
-            .where(Event.label == label)
-            .order_by(Event.start_time.desc())
-        )
+    event_query = Event.select(fn.MAX(Event.id)).where(Event.camera == camera_name)
+    if label != "any":
+        event_query = event_query.where(Event.label == label)
 
     try:
-        event = event_query.get()
+        event = event_query.scalar()
 
-        return event_thumbnail(event.id, 60)
+        return event_thumbnail(event, 60)
     except DoesNotExist:
         frame = np.zeros((175, 175, 3), np.uint8)
         ret, jpg = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
@@ -851,12 +883,17 @@ def events():
 @bp.route("/events/<camera_name>/<label>/create", methods=["POST"])
 def create_event(camera_name, label):
     if not camera_name or not current_app.frigate_config.cameras.get(camera_name):
-        return jsonify(
-            {"success": False, "message": f"{camera_name} is not a valid camera."}, 404
+        return make_response(
+            jsonify(
+                {"success": False, "message": f"{camera_name} is not a valid camera."}
+            ),
+            404,
         )
 
     if not label:
-        return jsonify({"success": False, "message": f"{label} must be set."}, 404)
+        return make_response(
+            jsonify({"success": False, "message": f"{label} must be set."}), 404
+        )
 
     json: dict[str, any] = request.get_json(silent=True) or {}
 
@@ -866,38 +903,50 @@ def create_event(camera_name, label):
         event_id = current_app.external_processor.create_manual_event(
             camera_name,
             label,
+            json.get("source_type", "api"),
             json.get("sub_label", None),
+            json.get("score", 0),
             json.get("duration", 30),
             json.get("include_recording", True),
             json.get("draw", {}),
             frame,
         )
     except Exception as e:
-        logger.error(f"The error is {e}")
-        return jsonify(
-            {"success": False, "message": f"An unknown error occurred: {e}"}, 404
+        return make_response(
+            jsonify({"success": False, "message": f"An unknown error occurred: {e}"}),
+            500,
         )
 
-    return jsonify(
-        {
-            "success": True,
-            "message": "Successfully created event.",
-            "event_id": event_id,
-        },
+    return make_response(
+        jsonify(
+            {
+                "success": True,
+                "message": "Successfully created event.",
+                "event_id": event_id,
+            }
+        ),
         200,
     )
 
 
 @bp.route("/events/<event_id>/end", methods=["PUT"])
 def end_event(event_id):
+    json: dict[str, any] = request.get_json(silent=True) or {}
+
     try:
-        current_app.external_processor.finish_manual_event(event_id)
+        end_time = json.get("end_time", datetime.now().timestamp())
+        current_app.external_processor.finish_manual_event(event_id, end_time)
     except Exception:
-        return jsonify(
-            {"success": False, "message": f"{event_id} must be set and valid."}, 404
+        return make_response(
+            jsonify(
+                {"success": False, "message": f"{event_id} must be set and valid."}
+            ),
+            404,
         )
 
-    return jsonify({"success": True, "message": "Event successfully ended."}, 200)
+    return make_response(
+        jsonify({"success": True, "message": "Event successfully ended."}), 200
+    )
 
 
 @bp.route("/config")
@@ -1008,6 +1057,48 @@ def config_save():
         return "Config successfully saved.", 200
 
 
+@bp.route("/config/set", methods=["PUT"])
+def config_set():
+    config_file = os.environ.get("CONFIG_FILE", f"{CONFIG_DIR}/config.yml")
+
+    # Check if we can use .yaml instead of .yml
+    config_file_yaml = config_file.replace(".yml", ".yaml")
+
+    if os.path.isfile(config_file_yaml):
+        config_file = config_file_yaml
+
+    with open(config_file, "r") as f:
+        old_raw_config = f.read()
+        f.close()
+
+    try:
+        update_yaml_from_url(config_file, request.url)
+        with open(config_file, "r") as f:
+            new_raw_config = f.read()
+            f.close()
+        # Validate the config schema
+        try:
+            FrigateConfig.parse_raw(new_raw_config)
+        except Exception:
+            with open(config_file, "w") as f:
+                f.write(old_raw_config)
+                f.close()
+            return make_response(
+                jsonify(
+                    {
+                        "success": False,
+                        "message": f"\nConfig Error:\n\n{str(traceback.format_exc())}",
+                    }
+                ),
+                400,
+            )
+    except Exception as e:
+        logging.error(f"Error updating config: {e}")
+        return "Error updating config", 500
+
+    return "Config successfully updated, restart to apply", 200
+
+
 @bp.route("/config/schema.json")
 def config_schema():
     return current_app.response_class(
@@ -1082,10 +1173,14 @@ def latest_frame(camera_name):
         frame = current_app.detected_frames_processor.get_current_frame(
             camera_name, draw_options
         )
+        retry_interval = float(
+            current_app.frigate_config.cameras.get(camera_name).ffmpeg.retry_interval
+            or 10
+        )
 
         if frame is None or datetime.now().timestamp() > (
             current_app.detected_frames_processor.get_current_frame_time(camera_name)
-            + 10
+            + retry_interval
         ):
             if current_app.camera_error_image is None:
                 error_image = glob.glob("/opt/frigate/frigate/images/camera-error.jpg")
@@ -1099,6 +1194,15 @@ def latest_frame(camera_name):
 
         height = int(request.args.get("h", str(frame.shape[0])))
         width = int(height * frame.shape[1] / frame.shape[0])
+
+        if frame is None:
+            return "Unable to get valid frame from {}".format(camera_name), 500
+
+        if height < 1 or width < 1:
+            return (
+                "Invalid height / width requested :: {} / {}".format(height, width),
+                400,
+            )
 
         frame = cv2.resize(frame, dsize=(width, height), interpolation=cv2.INTER_AREA)
 
@@ -1343,7 +1447,7 @@ def recording_clip(camera_name, start_ts, end_ts):
             playlist_lines.append(f"outpoint {int(end_ts - clip.start_time)}")
 
     file_name = f"clip_{camera_name}_{start_ts}-{end_ts}.mp4"
-    path = f"/tmp/cache/{file_name}"
+    path = os.path.join(CACHE_DIR, file_name)
 
     if not os.path.exists(path):
         ffmpeg_cmd = [
@@ -1505,9 +1609,39 @@ def vod_event(id):
     )
 
 
-@bp.route("/export/<camera_name>/start/<start_time>/end/<end_time>", methods=["POST"])
-def export_recording(camera_name: str, start_time: int, end_time: int):
-    playback_factor = request.get_json(silent=True).get("playback", "realtime")
+@bp.route(
+    "/export/<camera_name>/start/<int:start_time>/end/<int:end_time>", methods=["POST"]
+)
+@bp.route(
+    "/export/<camera_name>/start/<float:start_time>/end/<float:end_time>",
+    methods=["POST"],
+)
+def export_recording(camera_name: str, start_time, end_time):
+    if not camera_name or not current_app.frigate_config.cameras.get(camera_name):
+        return make_response(
+            jsonify(
+                {"success": False, "message": f"{camera_name} is not a valid camera."}
+            ),
+            404,
+        )
+
+    json: dict[str, any] = request.get_json(silent=True) or {}
+    playback_factor = json.get("playback", "realtime")
+
+    recordings_count = (
+        Recordings.select()
+        .where(
+            Recordings.start_time.between(start_time, end_time)
+            | Recordings.end_time.between(start_time, end_time)
+            | ((start_time > Recordings.start_time) & (end_time < Recordings.end_time))
+        )
+        .where(Recordings.camera == camera_name)
+        .count()
+    )
+
+    if recordings_count <= 0:
+        return "No recordings found for time range", 400
+
     exporter = RecordingExporter(
         current_app.frigate_config,
         camera_name,
@@ -1544,21 +1678,24 @@ def ffprobe():
     path_param = request.args.get("paths", "")
 
     if not path_param:
-        return jsonify(
-            {"success": False, "message": "Path needs to be provided."}, "404"
+        return make_response(
+            jsonify({"success": False, "message": "Path needs to be provided."}), 404
         )
 
     if path_param.startswith("camera"):
         camera = path_param[7:]
 
         if camera not in current_app.frigate_config.cameras.keys():
-            return jsonify(
-                {"success": False, "message": f"{camera} is not a valid camera."}, "404"
+            return make_response(
+                jsonify(
+                    {"success": False, "message": f"{camera} is not a valid camera."}
+                ),
+                404,
             )
 
         if not current_app.frigate_config.cameras[camera].enabled:
-            return jsonify(
-                {"success": False, "message": f"{camera} is not enabled."}, "404"
+            return make_response(
+                jsonify({"success": False, "message": f"{camera} is not enabled."}), 404
             )
 
         paths = map(
