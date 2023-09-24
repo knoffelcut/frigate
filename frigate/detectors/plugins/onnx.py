@@ -62,6 +62,9 @@ class OnnxDetector(DetectionApi):
         self.w = detector_config.model.width
 
         try:
+            logger.debug(
+                f"Loading ONNX Model ({detector_config.model.path}) to {detector_config.device,}"
+            )
             self.onnxruntime_session = onnxruntime.InferenceSession(
                 detector_config.model.path,
                 providers=[

@@ -90,23 +90,6 @@ RUN /bin/mkdir -p '/usr/local/lib' && \
     /usr/bin/install -c -m 644 libusb-1.0.pc '/usr/local/lib/pkgconfig' && \
     ldconfig
 
-# Get ONNX model(s)
-FROM base_amd64 AS onnx_converter
-ARG DEBIAN_FRONTEND
-
-# Install Ultralytics to download and convert original model
-COPY requirements_onnx_convert.txt /requirements_onnx_convert.txt
-RUN apt-get -qq update \
-    && apt-get -qq install -y wget python3 python3-distutils \
-    && wget -q https://bootstrap.pypa.io/get-pip.py -O get-pip.py \
-    && python3 get-pip.py "pip" \
-    && pip install -r /requirements_onnx_convert.txt \
-    && pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu \
-    && pip3 install ultralytics==8.0.* --no-deps
-
-# Get OpenVino Model
-RUN yolo detect export model=yolov8n format=onnx
-
 
 FROM wget AS models
 

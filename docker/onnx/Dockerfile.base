@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.4
+
+# https://askubuntu.com/questions/972516/debian-frontend-environment-variable
+ARG DEBIAN_FRONTEND=noninteractive
+
+
+# Get ONNX model
+FROM wget AS onnx-converter
+ARG DEBIAN_FRONTEND
+
+# Install Ultralytics to download and convert original model
+COPY docker/onnx/requirements-onnx-convert.txt /requirements-onnx-convert.txt
+RUN apt-get -qq update \
+    && apt-get -qq install -y wget python3 python3-distutils \
+    && wget -q https://bootstrap.pypa.io/get-pip.py -O get-pip.py \
+    && python3 get-pip.py "pip" \
+    && pip install -r /requirements-onnx-convert.txt \
+    && pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu \
+    && pip3 install ultralytics==8.0.* --no-deps
+
+# Get ONNX Model
+RUN cd / && yolo detect export model=yolov8n format=onnx
+
+FROM wheels AS onnx-wheels
+COPY docker/onnx/requirements-base.txt /requirements-base.txt
+RUN mkdir -p /onnx-wheels && pip3 wheel --wheel-dir=/onnx-wheels -r /requirements-base.txt
+
+FROM frigate AS frigate-onnx
+
+COPY --from=onnx-converter yolov8n.onnx ./
+RUN --mount=type=bind,from=onnx-wheels,source=/onnx-wheels,target=/deps/onnx-wheels \
+    pip3 install -U /deps/onnx-wheels/*.whl
+
+# Dev Container w/ TRT
+FROM devcontainer AS devcontainer-onnx
+
+COPY --from=onnx-converter yolov8n.onnx ./
+RUN --mount=type=bind,from=onnx-wheels,source=/onnx-wheels,target=/deps/onnx-wheels \
+    pip3 install -U /deps/onnx-wheels/*.whl
