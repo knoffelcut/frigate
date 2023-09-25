@@ -65,11 +65,12 @@ class OnnxDetector(DetectionApi):
             logger.debug(
                 f"Loading ONNX Model ({detector_config.model.path}) to {detector_config.device,}"
             )
+            providers = [detector_config.device, ]
+            if 'CPUExecutionProvider' not in providers:
+                providers += ['CPUExecutionProvider', ]
             self.onnxruntime_session = onnxruntime.InferenceSession(
                 detector_config.model.path,
-                providers=[
-                    detector_config.device,
-                ],
+                providers=providers
             )
         except Exception as e:
             logger.error(e)
