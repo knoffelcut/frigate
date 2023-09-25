@@ -66,6 +66,11 @@ target "onnx-wheels" {
   context = "."
 }
 
+target "onnx-nvidia-wheels" {
+  dockerfile = "docker/onnx/Dockerfile.nvidia"
+  context = "."
+}
+
 target "onnx" {
   dockerfile = "docker/onnx/Dockerfile.base"
   context = "."
@@ -77,6 +82,17 @@ target "onnx" {
   }
   target = "frigate-onnx"
   tags = ["frigate-onnx"]
+}
+
+target "onnx-nvidia" {
+  dockerfile = "docker/onnx/Dockerfile.nvidia"
+  context = "."
+  contexts = {
+    onnx-converter = "target:onnx-converter"
+    frigate = "target:frigate"
+  }
+  target = "frigate-nvidia-onnx"
+  tags = ["frigate-nvidia-onnx"]
 }
 
 target "devcontainer-onnx" {
