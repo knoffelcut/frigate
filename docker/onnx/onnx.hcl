@@ -90,6 +90,7 @@ target "onnx-nvidia" {
   contexts = {
     onnx-converter = "target:onnx-converter"
     frigate = "target:frigate"
+    wheels = "target:wheels"
   }
   target = "frigate-nvidia-onnx"
   tags = ["frigate-nvidia-onnx"]
