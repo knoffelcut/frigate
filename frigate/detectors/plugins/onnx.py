@@ -1,6 +1,17 @@
+"""
+TODO Reid support was added the hardcoded, dodgy way:
+    Just directly sticking it into this script
+It should rather go through a whole separate idendification module, in `frigate/identification`,
+    i.e. decoupled from the detector,
+    with the corresponding entries in the config file,
+    e.g. path to db
+    detection classes to which re-id must be applied (per reid model)
+"""
+
 import logging
 
 import numpy as np
+import cv2
 
 try:
     import onnxruntime
@@ -61,6 +72,8 @@ class OnnxDetector(DetectionApi):
         self.h = detector_config.model.height
         self.w = detector_config.model.width
 
+        self.nms_threshold = 0.3  # TODO As configurable parameter
+
         try:
             logger.debug(
                 f"Loading ONNX Model ({detector_config.model.path}) to {detector_config.device,}"
@@ -70,6 +83,12 @@ class OnnxDetector(DetectionApi):
                 providers += ['CPUExecutionProvider', ]
             self.onnxruntime_session = onnxruntime.InferenceSession(
                 detector_config.model.path,
+                providers=providers
+            )
+
+            # TODO MOVE
+            self.onnxruntime_session_identification = onnxruntime.InferenceSession(
+                "/media/models/osnet_ain_x1_0_catcam_softmax_cosinelr_3.onnx",  # TODO Not hardcoded
                 providers=providers
             )
         except Exception as e:
@@ -102,4 +121,31 @@ class OnnxDetector(DetectionApi):
         assert len(outputs[0]) == 1  # Batch Size == 1
         results = outputs[0][0]
 
-        return self.process_results(results)
+        results = self.process_results(results)
+
+        # for object_detected in results.data[0, :]:
+        #     if object_detected[0] != -1:
+        #         logger.debug(object_detected)
+        #     if object_detected[2] < 0.1 or i == 20:
+        #         break
+        #     detections[i] = [
+        #         object_detected[1],  # Label ID
+        #         float(object_detected[2]),  # Confidence
+        #         object_detected[4],  # y_min
+        #         object_detected[3],  # x_min
+        #         object_detected[6],  # y_max
+        #         object_detected[5],  # x_max
+        #     ]
+        #     i += 1
+        # return detections
+        if len(results):
+            idx = cv2.dnn.NMSBoxes(
+                [[l, t, r - l, b - t] for _, _, t, l, b, r in results],
+                [c for _, c, _, _, _, _ in results],
+                0.0,  # Enforced by top-k below
+                self.nms_threshold,
+                top_k=20,
+            )
+            results = [results[i] for i in idx]
+
+        return results
