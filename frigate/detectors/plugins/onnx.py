@@ -192,7 +192,7 @@ class OnnxDetector(DetectionApi):
             idx = cv2.dnn.NMSBoxes(
                 [[l, t, r - l, b - t] for _, _, t, l, b, r in results],
                 [c for _, c, _, _, _, _ in results],
-                0.0,  # Enforced by top-k below
+                0.5,  # Enforced by top-k below
                 self.nms_threshold,
                 top_k=20,
             )
@@ -249,5 +249,5 @@ class OnnxDetector(DetectionApi):
                 # class_name = label_to_class_name[label]
                 # print(class_name)
 
-                results = results_
+            results = np.array(results_).reshape((len(results_), 20))
         return results
