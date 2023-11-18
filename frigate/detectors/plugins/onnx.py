@@ -9,7 +9,9 @@ It should rather go through a whole separate idendification module, in `frigate/
 """
 
 import logging
+import pickle
 
+import scipy.spatial.distance
 import numpy as np
 import cv2
 
@@ -36,6 +38,34 @@ onnx_type_to_numpy = {
     "tensor(int8)": np.int8,
     "tensor(uint8)": np.uint8,
 }
+
+
+pixel_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+pixel_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+
+class_name_to_label = {
+    'skapie': 0,
+    'gertjie': 1,
+    'lola': 2,
+    'charlie': 3,
+    'would-be-lee': 5
+}
+label_to_class_name = {v: k for k, v in class_name_to_label.items()}
+
+
+def predict_reid(onnxruntime_session: onnxruntime.InferenceSession, image: np.ndarray):
+    image = image[:, :, ::-1]  # BGR2RGB
+    # image = image.astype(np.float32)/255.
+    image = (image - pixel_mean)/pixel_std
+    image = np.ascontiguousarray(image.transpose((2, 0, 1))[None, ...].astype(np.float32))
+
+    onnxruntime_name_input = onnxruntime_session.get_inputs()[0].name
+    onnxruntime_inputs = {onnxruntime_name_input: image}
+    output = onnxruntime_session.run(None, onnxruntime_inputs)
+    d = output[0][0]
+
+    return d
 
 
 class OnnxDetectorConfig(BaseDetectorConfig):
@@ -88,9 +118,29 @@ class OnnxDetector(DetectionApi):
 
             # TODO MOVE
             self.onnxruntime_session_identification = onnxruntime.InferenceSession(
-                "/media/models/osnet_ain_x1_0_catcam_softmax_cosinelr_3.onnx",  # TODO Not hardcoded
+                "/media/models/osnet_ain_x1_0_catcam_softmax_cosinelr_3.onnx",  # # TODO From config
                 providers=providers
             )
+
+            path_reid_db = "/media/models/feature_vectors_0d094e5a.pkl"  # TODO From config
+            with open(path_reid_db, "rb") as f:
+                self.feature_vectors_reid = pickle.load(f)
+
+            self.X = []
+            self.y = []
+            for _, label, d in self.feature_vectors_reid:
+                try:
+                    label = class_name_to_label[label]
+                except KeyError:
+                    continue
+
+                # print(label)
+                # y.append(label)
+                self.y.append(label)
+                self.X.append(d)
+
+            self.y = np.array(self.y)
+            self.X = np.array(self.X)
         except Exception as e:
             logger.error(e)
             raise RuntimeError("failed to create ONNX Runtime Session") from e
@@ -148,4 +198,56 @@ class OnnxDetector(DetectionApi):
             )
             results = [results[i] for i in idx]
 
+            # nhwc
+            height, width = tensor_input.shape[-3:-1]
+
+            results_ = []
+            for detection in results:
+                # Crop and pad
+                _, _, t, l, b, r = detection
+                l = int(round(l*width))
+                r = int(round(r*width))
+                t = int(round(t*height))
+                b = int(round(b*height))
+
+                pl, l = -min(0, l), max(0, l)
+                pt, t = -min(0, t), max(0, t)
+                pr, r = max(0, r - width), min(r, width)
+                pb, b = max(0, b - height), min(b, height)
+
+                assert tensor_input.shape[0] == 1
+                crop = tensor_input[0, t:b, l:r]
+                if max((pl, pt, pr, pb)) > 0:
+                    crop = np.pad(crop, ((pt, pb), (pl, pr), (0, 0)))
+                crop = cv2.resize(crop, (256, 256))  # TODO Unhardcode
+
+                d = predict_reid(self.onnxruntime_session_identification, crop)
+
+                distances_cosine = scipy.spatial.distance.cdist(d[None, ...], self.X, metric='cosine')[0]
+                distances = distances_cosine
+                idx = np.where(distances < 0.15)[0]
+
+                labels = self.y[idx]
+                try:
+                    mode = scipy.stats.mode(labels)
+                    label = mode[0][0]
+                    confidence = mode[1][0]/len(labels)
+                except:
+                    label = self.y[np.argmin(distances)]
+                    confidence = 0.0
+
+                if confidence > 0.5:
+                    results_.append(
+                        label,
+                        confidence,
+                        detection[2],
+                        detection[3],
+                        detection[4],
+                        detection[5],
+                    )
+
+                # class_name = label_to_class_name[label]
+                # print(class_name)
+
+                results = results_
         return results
