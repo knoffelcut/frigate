@@ -234,13 +234,14 @@ class OnnxDetector(DetectionApi):
                 idx = np.where(distances < 0.15)[0]
 
                 labels = self.y[idx]
-                try:
-                    mode = scipy.stats.mode(labels)
-                    label = mode[0][0]
-                    confidence = mode[1][0]/len(labels)
-                except:
-                    label = self.y[np.argmin(distances)]
+
+                if len(labels) == 0:
                     confidence = 0.0
+                    label = self.y[np.argmin(distances)]
+                else:
+                    mode = scipy.stats.mode(labels, keepdims=False)
+                    label = mode[0]
+                    confidence = mode[1] / len(labels)
 
                 if confidence > 0.5:
                     results_[k] = (
