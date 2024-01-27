@@ -71,6 +71,8 @@ def predict_reid(onnxruntime_session: onnxruntime.InferenceSession, image: np.nd
 class OnnxDetectorConfig(BaseDetectorConfig):
     type: Literal[DETECTOR_KEY]
     device: str = Field(default="CPUExecutionProvider", title="Device Type")
+    # path_reidentification: str = Field(title="Reidentification model path.")
+    # path_reidentification_database: str = Field(title="Reidentification database path.")
 
 
 class OnnxDetector(DetectionApi):
@@ -118,11 +120,13 @@ class OnnxDetector(DetectionApi):
 
             # TODO MOVE
             self.onnxruntime_session_identification = onnxruntime.InferenceSession(
-                "/media/models/osnet_ain_x1_0_catcam_softmax_cosinelr_3.onnx",  # # TODO From config
+                # detector_config.model.path_reidentification,
+                "/media/models/osnet_ain_x1_0_catcam_softmax_cosinelr_5.onnx",
                 providers=providers
             )
 
-            path_reid_db = "/media/models/feature_vectors_0d094e5a.pkl"  # TODO From config
+            # path_reid_db = detector_config.model.path_reidentification_database
+            path_reid_db = "/media/models/feature_vectors_51cf3122.pkl"
             with open(path_reid_db, "rb") as f:
                 self.feature_vectors_reid = pickle.load(f)
 
@@ -198,10 +202,11 @@ class OnnxDetector(DetectionApi):
             )
             results = [results[i] for i in idx]
 
-            # nhwc
-            height, width = tensor_input.shape[-3:-1]
+            # nchw
+            height, width = tensor_input.shape[-2:]
 
-            results_ = []
+            k = 0
+            results_ = np.zeros((20, 6), dtype=np.float32)
             for detection in results:
                 # Crop and pad
                 _, _, t, l, b, r = detection
@@ -216,7 +221,8 @@ class OnnxDetector(DetectionApi):
                 pb, b = max(0, b - height), min(b, height)
 
                 assert tensor_input.shape[0] == 1
-                crop = tensor_input[0, t:b, l:r]
+                crop = tensor_input[0, :, t:b, l:r]
+                crop = crop.transpose((1, 2, 0))
                 if max((pl, pt, pr, pb)) > 0:
                     crop = np.pad(crop, ((pt, pb), (pl, pr), (0, 0)))
                 crop = cv2.resize(crop, (256, 256))  # TODO Unhardcode
@@ -237,7 +243,7 @@ class OnnxDetector(DetectionApi):
                     confidence = 0.0
 
                 if confidence > 0.5:
-                    results_.append(
+                    results_[k] = (
                         label,
                         confidence,
                         detection[2],
@@ -245,9 +251,10 @@ class OnnxDetector(DetectionApi):
                         detection[4],
                         detection[5],
                     )
+                    k += 1
 
                 # class_name = label_to_class_name[label]
                 # print(class_name)
 
-            results = np.array(results_).reshape((len(results_), 20))
+            results = np.array(results_).reshape((len(results_), 6))
         return results
