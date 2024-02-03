@@ -9,8 +9,30 @@ from typing import AnyStr, Optional
 
 import cv2
 import numpy as np
+from unidecode import unidecode
 
 logger = logging.getLogger(__name__)
+
+
+def transliterate_to_latin(text: str) -> str:
+    """
+    Transliterate a given text to Latin.
+
+    This function uses the unidecode library to transliterate the input text to Latin.
+    It is useful for converting texts with diacritics or non-Latin characters to a
+    Latin equivalent.
+
+    Args:
+        text (str): The text to be transliterated.
+
+    Returns:
+        str: The transliterated text.
+
+    Example:
+        >>> transliterate_to_latin('frégate')
+        'fregate'
+    """
+    return unidecode(text)
 
 
 def draw_timestamp(
@@ -116,7 +138,10 @@ def draw_box_with_label(
 ):
     if color is None:
         color = (0, 0, 255)
-    display_text = "{}: {}".format(label, info)
+    try:
+        display_text = transliterate_to_latin("{}: {}".format(label, info))
+    except Exception:
+        display_text = "{}: {}".format(label, info)
     cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), color, thickness)
     font_scale = 0.5
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -287,17 +312,14 @@ def yuv_crop_and_resize(frame, region, height=None):
     # copy u2
     yuv_cropped_frame[
         size + uv_channel_y_offset : size + uv_channel_y_offset + uv_crop_height,
-        size // 2
-        + uv_channel_x_offset : size // 2
+        size // 2 + uv_channel_x_offset : size // 2
         + uv_channel_x_offset
         + uv_crop_width,
     ] = frame[u2[1] : u2[3], u2[0] : u2[2]]
 
     # copy v1
     yuv_cropped_frame[
-        size
-        + size // 4
-        + uv_channel_y_offset : size
+        size + size // 4 + uv_channel_y_offset : size
         + size // 4
         + uv_channel_y_offset
         + uv_crop_height,
@@ -306,14 +328,11 @@ def yuv_crop_and_resize(frame, region, height=None):
 
     # copy v2
     yuv_cropped_frame[
-        size
-        + size // 4
-        + uv_channel_y_offset : size
+        size + size // 4 + uv_channel_y_offset : size
         + size // 4
         + uv_channel_y_offset
         + uv_crop_height,
-        size // 2
-        + uv_channel_x_offset : size // 2
+        size // 2 + uv_channel_x_offset : size // 2
         + uv_channel_x_offset
         + uv_crop_width,
     ] = frame[v2[1] : v2[3], v2[0] : v2[2]]
@@ -368,6 +387,7 @@ def copy_yuv_to_position(
     destination_shape,
     source_frame=None,
     source_channel_dim=None,
+    interpolation=cv2.INTER_LINEAR,
 ):
     # get the coordinates of the channels for this position in the layout
     y, u1, u2, v1, v2 = get_yuv_crop(
@@ -416,7 +436,6 @@ def copy_yuv_to_position(
         uv_y_offset = y_y_offset // 4
         uv_x_offset = y_x_offset // 2
 
-        interpolation = cv2.INTER_LINEAR
         # resize/copy y channel
         destination_frame[
             y[1] + y_y_offset : y[1] + y_y_offset + y_resize_height,

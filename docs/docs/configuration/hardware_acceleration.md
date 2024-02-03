@@ -3,7 +3,11 @@ id: hardware_acceleration
 title: Hardware Acceleration
 ---
 
-It is recommended to update your configuration to enable hardware accelerated decoding in ffmpeg. Depending on your system, these parameters may not be compatible. More information on hardware accelerated decoding for ffmpeg can be found here: https://trac.ffmpeg.org/wiki/HWAccelIntro
+# Hardware Acceleration
+
+It is highly recommended to use a GPU for hardware acceleration in Frigate. Some types of hardware acceleration are detected and used automatically, but you may need to update your configuration to enable hardware accelerated decoding in ffmpeg.
+
+Depending on your system, these parameters may not be compatible. More information on hardware accelerated decoding for ffmpeg can be found here: https://trac.ffmpeg.org/wiki/HWAccelIntro
 
 # Officially Supported
 
@@ -13,8 +17,13 @@ Ensure you increase the allocated RAM for your GPU to at least 128 (raspi-config
 **NOTICE**: If you are using the addon, you may need to turn off `Protection mode` for hardware acceleration.
 
 ```yaml
+# if you want to decode a h264 stream
 ffmpeg:
   hwaccel_args: preset-rpi-64-h264
+
+# if you want to decode a h265 (hevc) stream
+ffmpeg:
+  hwaccel_args: preset-rpi-64-h265
 ```
 
 :::note
@@ -23,10 +32,10 @@ If running Frigate in docker, you either need to run in priviliged mode or be su
 
 ```yaml
 docker run -d \
-  --name frigate \
-  ...
-  --device /dev/video10 \
-  ghcr.io/blakeblackshear/frigate:stable
+--name frigate \
+...
+--device /dev/video10 \
+ghcr.io/blakeblackshear/frigate:stable
 ```
 
 :::
@@ -42,7 +51,11 @@ ffmpeg:
   hwaccel_args: preset-vaapi
 ```
 
-**NOTICE**: With some of the processors, like the J4125, the default driver `iHD` doesn't seem to work correctly for hardware acceleration. You may need to change the driver to `i965` by adding the following environment variable `LIBVA_DRIVER_NAME=i965` to your docker-compose file or [in the `frigate.yaml` for HA OS users](advanced.md#environment_vars).
+:::note
+
+With some of the processors, like the J4125, the default driver `iHD` doesn't seem to work correctly for hardware acceleration. You may need to change the driver to `i965` by adding the following environment variable `LIBVA_DRIVER_NAME=i965` to your docker-compose file or [in the `frigate.yaml` for HA OS users](advanced.md#environment_vars).
+
+:::
 
 ### Via Quicksync (>=10th Generation only)
 
@@ -64,11 +77,10 @@ ffmpeg:
 
 ### Configuring Intel GPU Stats in Docker
 
-Additional configuration is needed for the Docker container to be able to access the `intel_gpu_top` command for GPU stats. Three possible changes can be made:
+Additional configuration is needed for the Docker container to be able to access the `intel_gpu_top` command for GPU stats. There are two options:
 
 1. Run the container as privileged.
-2. Adding the `CAP_PERFMON` capability.
-3. Setting the `perf_event_paranoid` low enough to allow access to the performance event system.
+2. Add the `CAP_PERFMON` capability (note: you might need to set the `perf_event_paranoid` low enough to allow access to the performance event system.)
 
 #### Run as privileged
 
@@ -125,13 +137,17 @@ _Note: This setting must be changed for the entire system._
 
 For more information on the various values across different distributions, see https://askubuntu.com/questions/1400874/what-does-perf-paranoia-level-four-do.
 
-Depending on your OS and kernel configuration, you may need to change the `/proc/sys/kernel/perf_event_paranoid` kernel tunable. You can test the change by running `sudo sh -c 'echo 2 >/proc/sys/kernel/perf_event_paranoid'` which will persist until a reboot. Make it permanent by running `sudo sh -c 'echo kernel.perf_event_paranoid=1 >> /etc/sysctl.d/local.conf'`
+Depending on your OS and kernel configuration, you may need to change the `/proc/sys/kernel/perf_event_paranoid` kernel tunable. You can test the change by running `sudo sh -c 'echo 2 >/proc/sys/kernel/perf_event_paranoid'` which will persist until a reboot. Make it permanent by running `sudo sh -c 'echo kernel.perf_event_paranoid=2 >> /etc/sysctl.d/local.conf'`
 
 ## AMD/ATI GPUs (Radeon HD 2000 and newer GPUs) via libva-mesa-driver
 
 VAAPI supports automatic profile selection so it will work automatically with both H.264 and H.265 streams.
 
-**Note:** You also need to set `LIBVA_DRIVER_NAME=radeonsi` as an environment variable on the container.
+:::note
+
+You need to change the driver to `radeonsi` by adding the following environment variable `LIBVA_DRIVER_NAME=radeonsi` to your docker-compose file or [in the `frigate.yaml` for HA OS users](advanced.md#environment_vars).
+
+:::
 
 ```yaml
 ffmpeg:
@@ -247,7 +263,7 @@ These instructions were originally based on the [Jellyfin documentation](https:/
 
 # Community Supported
 
-## NVIDIA Jetson (Orin AGX, Orin NX, Orin Nano*, Xavier AGX, Xavier NX, TX2, TX1, Nano)
+## NVIDIA Jetson (Orin AGX, Orin NX, Orin Nano\*, Xavier AGX, Xavier NX, TX2, TX1, Nano)
 
 A separate set of docker images is available that is based on Jetpack/L4T. They comes with an `ffmpeg` build
 with codecs that use the Jetson's dedicated media engine. If your Jetson host is running Jetpack 4.6, use the
@@ -320,3 +336,57 @@ ffmpeg:
 If everything is working correctly, you should see a significant reduction in ffmpeg CPU load and power consumption.
 Verify that hardware decoding is working by running `jtop` (`sudo pip3 install -U jetson-stats`), which should show
 that NVDEC/NVDEC1 are in use.
+
+## Rockchip platform
+
+Hardware accelerated video de-/encoding is supported on all Rockchip SoCs.
+
+### Setup
+
+Use a frigate docker image with `-rk` suffix and enable privileged mode by adding the `--privileged` flag to your docker run command or `privileged: true` to your `docker-compose.yml` file.
+
+### Configuration
+
+Add one of the following ffmpeg presets to your `config.yaml` to enable hardware acceleration:
+
+```yaml
+# if you try to decode a h264 encoded stream
+ffmpeg:
+  hwaccel_args: preset-rk-h264
+
+# if you try to decode a h265 (hevc) encoded stream
+ffmpeg:
+  hwaccel_args: preset-rk-h265
+```
+
+:::note
+
+Make sure that your SoC supports hardware acceleration for your input stream. For example, if your camera streams with h265 encoding and a 4k resolution, your SoC must be able to de- and encode h265 with a 4k resolution or higher. If you are unsure whether your SoC meets the requirements, take a look at the datasheet.
+
+:::
+
+### go2rtc presets for hardware accelerated transcoding
+
+If your input stream is to be transcoded using hardware acceleration, there are these presets for go2rtc: `h264/rk` and `h265/rk`. You can use them this way:
+
+```
+go2rtc:
+  streams:
+    Cam_h264: ffmpeg:rtsp://username:password@192.168.1.123/av_stream/ch0#video=h264/rk
+    Cam_h265: ffmpeg:rtsp://username:password@192.168.1.123/av_stream/ch0#video=h265/rk
+```
+
+:::warning
+
+The go2rtc docs may suggest the following configuration:
+
+```
+go2rtc:
+  streams:
+    Cam_h264: ffmpeg:rtsp://username:password@192.168.1.123/av_stream/ch0#video=h264#hardware=rk
+    Cam_h265: ffmpeg:rtsp://username:password@192.168.1.123/av_stream/ch0#video=h265#hardware=rk
+```
+
+However, this does not currently work.
+
+:::

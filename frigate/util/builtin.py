@@ -8,12 +8,15 @@ import shlex
 import urllib.parse
 from collections import Counter
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Tuple
 
 import numpy as np
 import pytz
 import yaml
 from ruamel.yaml import YAML
+from tzlocal import get_localzone
+from zoneinfo import ZoneInfoNotFoundError
 
 from frigate.const import REGEX_HTTP_CAMERA_USER_PASS, REGEX_RTSP_CAMERA_USER_PASS
 
@@ -87,7 +90,8 @@ def load_config_with_no_duplicates(raw_config) -> dict:
     """Get config ensuring duplicate keys are not allowed."""
 
     # https://stackoverflow.com/a/71751051
-    class PreserveDuplicatesLoader(yaml.loader.Loader):
+    # important to use SafeLoader here to avoid RCE
+    class PreserveDuplicatesLoader(yaml.loader.SafeLoader):
         pass
 
     def map_constructor(loader, node, deep=False):
@@ -112,10 +116,8 @@ def load_config_with_no_duplicates(raw_config) -> dict:
 
 def clean_camera_user_pass(line: str) -> str:
     """Removes user and password from line."""
-    if "rtsp://" in line:
-        return re.sub(REGEX_RTSP_CAMERA_USER_PASS, "://*:*@", line)
-    else:
-        return re.sub(REGEX_HTTP_CAMERA_USER_PASS, "user=*&password=*", line)
+    rtsp_cleaned = re.sub(REGEX_RTSP_CAMERA_USER_PASS, "://*:*@", line)
+    return re.sub(REGEX_HTTP_CAMERA_USER_PASS, "user=*&password=*", rtsp_cleaned)
 
 
 def escape_special_characters(path: str) -> str:
@@ -156,7 +158,7 @@ def load_labels(path, encoding="utf-8", prefill=91):
         return labels
 
 
-def get_tz_modifiers(tz_name: str) -> Tuple[str, str]:
+def get_tz_modifiers(tz_name: str) -> Tuple[str, str, int]:
     seconds_offset = (
         datetime.datetime.now(pytz.timezone(tz_name)).utcoffset().total_seconds()
     )
@@ -164,7 +166,7 @@ def get_tz_modifiers(tz_name: str) -> Tuple[str, str]:
     minutes_offset = int(seconds_offset / 60 - hours_offset * 60)
     hour_modifier = f"{hours_offset} hour"
     minute_modifier = f"{minutes_offset} minute"
-    return hour_modifier, minute_modifier
+    return hour_modifier, minute_modifier, seconds_offset
 
 
 def to_relative_box(
@@ -249,3 +251,44 @@ def update_yaml(data, key_path, new_value):
                 temp[last_key] = new_value
 
     return data
+
+
+def find_by_key(dictionary, target_key):
+    if target_key in dictionary:
+        return dictionary[target_key]
+    else:
+        for value in dictionary.values():
+            if isinstance(value, dict):
+                result = find_by_key(value, target_key)
+                if result is not None:
+                    return result
+    return None
+
+
+def get_tomorrow_at_time(hour: int) -> datetime.datetime:
+    """Returns the datetime of the following day at 2am."""
+    try:
+        tomorrow = datetime.datetime.now(get_localzone()) + datetime.timedelta(days=1)
+    except ZoneInfoNotFoundError:
+        tomorrow = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+            days=1
+        )
+        logger.warning(
+            "Using utc for maintenance due to missing or incorrect timezone set"
+        )
+
+    return tomorrow.replace(hour=hour, minute=0, second=0).astimezone(
+        datetime.timezone.utc
+    )
+
+
+def clear_and_unlink(file: Path, missing_ok: bool = True) -> None:
+    """clear file then unlink to avoid space retained by file descriptors."""
+    if not missing_ok and not file.exists():
+        raise FileNotFoundError()
+
+    # empty contents of file before unlinking https://github.com/blakeblackshear/frigate/issues/4769
+    with open(file, "w"):
+        pass
+
+    file.unlink(missing_ok=missing_ok)

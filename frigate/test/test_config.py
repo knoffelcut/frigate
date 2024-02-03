@@ -653,7 +653,7 @@ class TestConfig(unittest.TestCase):
                         "inputs": [
                             {
                                 "path": "rtsp://10.0.0.1:554/video",
-                                "roles": ["detect", "rtmp"],
+                                "roles": ["detect"],
                             },
                             {"path": "rtsp://10.0.0.1:554/record", "roles": ["record"]},
                         ]
@@ -930,7 +930,7 @@ class TestConfig(unittest.TestCase):
                         "width": 1920,
                         "fps": 5,
                     },
-                    "rtmp": {"enabled": True},
+                    "audio": {"enabled": True},
                 }
             },
         }
@@ -1027,7 +1027,12 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
-                    }
+                    },
+                    "detect": {
+                        "height": 720,
+                        "width": 1280,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1082,6 +1087,11 @@ class TestConfig(unittest.TestCase):
                             },
                         ]
                     },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                     "snapshots": {
                         "height": 100,
                     },
@@ -1107,7 +1117,12 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
-                    }
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1132,6 +1147,11 @@ class TestConfig(unittest.TestCase):
                             },
                         ]
                     },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                     "snapshots": {
                         "height": 150,
                         "enabled": True,
@@ -1147,102 +1167,6 @@ class TestConfig(unittest.TestCase):
         assert runtime_config.cameras["back"].snapshots.height == 150
         assert runtime_config.cameras["back"].snapshots.enabled
 
-    def test_global_rtmp_disabled(self):
-        config = {
-            "mqtt": {"host": "mqtt"},
-            "cameras": {
-                "back": {
-                    "ffmpeg": {
-                        "inputs": [
-                            {
-                                "path": "rtsp://10.0.0.1:554/video",
-                                "roles": ["detect"],
-                            },
-                        ]
-                    },
-                }
-            },
-        }
-        frigate_config = FrigateConfig(**config)
-        assert config == frigate_config.dict(exclude_unset=True)
-
-        runtime_config = frigate_config.runtime_config()
-        assert not runtime_config.cameras["back"].rtmp.enabled
-
-    def test_default_not_rtmp(self):
-        config = {
-            "mqtt": {"host": "mqtt"},
-            "cameras": {
-                "back": {
-                    "ffmpeg": {
-                        "inputs": [
-                            {
-                                "path": "rtsp://10.0.0.1:554/video",
-                                "roles": ["detect"],
-                            },
-                        ]
-                    }
-                }
-            },
-        }
-        frigate_config = FrigateConfig(**config)
-        assert config == frigate_config.dict(exclude_unset=True)
-
-        runtime_config = frigate_config.runtime_config()
-        assert not runtime_config.cameras["back"].rtmp.enabled
-
-    def test_global_rtmp_merge(self):
-        config = {
-            "mqtt": {"host": "mqtt"},
-            "rtmp": {"enabled": False},
-            "cameras": {
-                "back": {
-                    "ffmpeg": {
-                        "inputs": [
-                            {
-                                "path": "rtsp://10.0.0.1:554/video",
-                                "roles": ["detect", "rtmp"],
-                            },
-                        ]
-                    },
-                    "rtmp": {
-                        "enabled": True,
-                    },
-                }
-            },
-        }
-        frigate_config = FrigateConfig(**config)
-        assert config == frigate_config.dict(exclude_unset=True)
-
-        runtime_config = frigate_config.runtime_config()
-        assert runtime_config.cameras["back"].rtmp.enabled
-
-    def test_global_rtmp_default(self):
-        config = {
-            "mqtt": {"host": "mqtt"},
-            "cameras": {
-                "back": {
-                    "ffmpeg": {
-                        "inputs": [
-                            {
-                                "path": "rtsp://10.0.0.1:554/video",
-                                "roles": ["detect"],
-                            },
-                            {
-                                "path": "rtsp://10.0.0.1:554/video2",
-                                "roles": ["record"],
-                            },
-                        ]
-                    },
-                }
-            },
-        }
-        frigate_config = FrigateConfig(**config)
-        assert config == frigate_config.dict(exclude_unset=True)
-
-        runtime_config = frigate_config.runtime_config()
-        assert not runtime_config.cameras["back"].rtmp.enabled
-
     def test_global_jsmpeg(self):
         config = {
             "mqtt": {"host": "mqtt"},
@@ -1256,6 +1180,11 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
                     },
                 }
             },
@@ -1278,7 +1207,12 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
-                    }
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1301,6 +1235,11 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
                     },
                     "live": {
                         "quality": 7,
@@ -1329,6 +1268,11 @@ class TestConfig(unittest.TestCase):
                             },
                         ]
                     },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1350,7 +1294,12 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
-                    }
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1363,7 +1312,6 @@ class TestConfig(unittest.TestCase):
     def test_global_timestamp_style_merge(self):
         config = {
             "mqtt": {"host": "mqtt"},
-            "rtmp": {"enabled": False},
             "timestamp_style": {"position": "br", "thickness": 2},
             "cameras": {
                 "back": {
@@ -1374,6 +1322,11 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
                     },
                     "timestamp_style": {"position": "bl", "thickness": 4},
                 }
@@ -1400,6 +1353,11 @@ class TestConfig(unittest.TestCase):
                             },
                         ]
                     },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1422,6 +1380,11 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
                     },
                 }
             },
@@ -1450,6 +1413,11 @@ class TestConfig(unittest.TestCase):
                             },
                         ],
                     },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
                 }
             },
         }
@@ -1474,6 +1442,11 @@ class TestConfig(unittest.TestCase):
                                 "roles": ["detect"],
                             },
                         ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
                     },
                     "zones": {
                         "steps": {
@@ -1535,6 +1508,60 @@ class TestConfig(unittest.TestCase):
         assert "dog" in runtime_config.cameras["back"].objects.filters
         assert runtime_config.cameras["back"].objects.filters["dog"].min_ratio == 0.2
         assert runtime_config.cameras["back"].objects.filters["dog"].max_ratio == 10.1
+
+    def test_valid_movement_weights(self):
+        config = {
+            "mqtt": {"host": "mqtt"},
+            "cameras": {
+                "back": {
+                    "ffmpeg": {
+                        "inputs": [
+                            {"path": "rtsp://10.0.0.1:554/video", "roles": ["detect"]}
+                        ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
+                    "onvif": {
+                        "autotracking": {"movement_weights": "0, 1, 1.23, 2.34, 0.50"}
+                    },
+                }
+            },
+        }
+        frigate_config = FrigateConfig(**config)
+
+        runtime_config = frigate_config.runtime_config()
+        assert runtime_config.cameras["back"].onvif.autotracking.movement_weights == [
+            "0.0",
+            "1.0",
+            "1.23",
+            "2.34",
+            "0.5",
+        ]
+
+    def test_fails_invalid_movement_weights(self):
+        config = {
+            "mqtt": {"host": "mqtt"},
+            "cameras": {
+                "back": {
+                    "ffmpeg": {
+                        "inputs": [
+                            {"path": "rtsp://10.0.0.1:554/video", "roles": ["detect"]}
+                        ]
+                    },
+                    "detect": {
+                        "height": 1080,
+                        "width": 1920,
+                        "fps": 5,
+                    },
+                    "onvif": {"autotracking": {"movement_weights": "1.234, 2.345a"}},
+                }
+            },
+        }
+
+        self.assertRaises(ValueError, lambda: FrigateConfig(**config))
 
 
 if __name__ == "__main__":

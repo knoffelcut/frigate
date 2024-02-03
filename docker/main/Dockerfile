@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.4
+# syntax=docker/dockerfile:1.6
 
 # https://askubuntu.com/questions/972516/debian-frontend-environment-variable
 ARG DEBIAN_FRONTEND=noninteractive
@@ -33,7 +33,7 @@ RUN --mount=type=tmpfs,target=/tmp --mount=type=tmpfs,target=/var/cache/apt \
 FROM scratch AS go2rtc
 ARG TARGETARCH
 WORKDIR /rootfs/usr/local/go2rtc/bin
-ADD --link --chmod=755 "https://github.com/AlexxIT/go2rtc/releases/download/v1.6.2/go2rtc_linux_${TARGETARCH}" go2rtc
+ADD --link --chmod=755 "https://github.com/AlexxIT/go2rtc/releases/download/v1.8.4/go2rtc_linux_${TARGETARCH}" go2rtc
 
 
 ####
@@ -122,13 +122,15 @@ RUN apt-get -qq update \
     apt-transport-https \
     gnupg \
     wget \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138 \
-    && echo "deb http://deb.debian.org/debian bullseye main contrib non-free" | tee /etc/apt/sources.list.d/raspi.list \
+    # the key fingerprint can be obtained from https://ftp-master.debian.org/keys.html
+    && wget -qO- "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xA4285295FC7B1A81600062A9605C66F00D6C9793" | \
+    gpg --dearmor > /usr/share/keyrings/debian-archive-bullseye-stable.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/debian-archive-bullseye-stable.gpg] http://deb.debian.org/debian bullseye main contrib non-free" | \
+    tee /etc/apt/sources.list.d/debian-bullseye-nonfree.list \
     && apt-get -qq update \
     && apt-get -qq install -y \
     python3.9 \
     python3.9-dev \
-    wget \
     # opencv dependencies
     build-essential cmake git pkg-config libgtk-3-dev \
     libavcodec-dev libavformat-dev libswscale-dev libv4l-dev \
@@ -190,7 +192,6 @@ COPY --from=deps-rootfs / /
 RUN ldconfig
 
 EXPOSE 5000
-EXPOSE 1935
 EXPOSE 8554
 EXPOSE 8555/tcp 8555/udp
 
@@ -199,6 +200,9 @@ ENV S6_LOGGING_SCRIPT="T 1 n0 s10000000 T"
 
 ENTRYPOINT ["/init"]
 CMD []
+
+HEALTHCHECK --start-period=120s --start-interval=5s --interval=15s --timeout=5s --retries=3 \
+    CMD curl --fail --silent --show-error http://127.0.0.1:5000/api/version || exit 1
 
 # Frigate deps with Node.js and NPM for devcontainer
 FROM deps AS devcontainer
@@ -211,13 +215,13 @@ COPY docker/main/fake_frigate_run /etc/s6-overlay/s6-rc.d/frigate/run
 RUN mkdir -p /opt/frigate \
     && ln -svf /workspace/frigate/frigate /opt/frigate/frigate
 
-# Install Node 16
-RUN apt-get update \
-    && apt-get install wget -y \
-    && wget -qO- https://deb.nodesource.com/setup_16.x | bash - \
-    && apt-get install -y nodejs \
+# Install Node 20
+RUN curl -SLO https://deb.nodesource.com/nsolid_setup_deb.sh && \
+    chmod 500 nsolid_setup_deb.sh && \
+    ./nsolid_setup_deb.sh 20 && \
+    apt-get install nodejs -y \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g npm@9
+    && npm install -g npm@10
 
 WORKDIR /workspace/frigate
 
@@ -233,7 +237,7 @@ CMD ["sleep", "infinity"]
 
 # Frigate web build
 # This should be architecture agnostic, so speed up the build on multiarch by not using QEMU.
-FROM --platform=$BUILDPLATFORM node:16 AS web-build
+FROM --platform=$BUILDPLATFORM node:20 AS web-build
 
 WORKDIR /work
 COPY web/package.json web/package-lock.json ./

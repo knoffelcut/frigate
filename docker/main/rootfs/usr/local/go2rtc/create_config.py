@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -16,6 +17,14 @@ sys.path.remove("/opt/frigate")
 
 
 FRIGATE_ENV_VARS = {k: v for k, v in os.environ.items() if k.startswith("FRIGATE_")}
+# read docker secret files as env vars too
+if os.path.isdir("/run/secrets"):
+    for secret_file in os.listdir("/run/secrets"):
+        if secret_file.startswith("FRIGATE_"):
+            FRIGATE_ENV_VARS[secret_file] = Path(
+                os.path.join("/run/secrets", secret_file)
+            ).read_text()
+
 config_file = os.environ.get("CONFIG_FILE", "/config/config.yml")
 
 # Check if we can use .yaml instead of .yml
@@ -49,7 +58,15 @@ if go2rtc_config.get("log") is None:
 elif go2rtc_config["log"].get("format") is None:
     go2rtc_config["log"]["format"] = "text"
 
-if not go2rtc_config.get("webrtc", {}).get("candidates", []):
+# ensure there is a default webrtc config
+if not go2rtc_config.get("webrtc"):
+    go2rtc_config["webrtc"] = {}
+
+# go2rtc should listen on 8555 tcp & udp by default
+if not go2rtc_config["webrtc"].get("listen"):
+    go2rtc_config["webrtc"]["listen"] = ":8555"
+
+if not go2rtc_config["webrtc"].get("candidates", []):
     default_candidates = []
     # use internal candidate if it was discovered when running through the add-on
     internal_candidate = os.environ.get(
@@ -96,16 +113,43 @@ if int(os.environ["LIBAVFORMAT_VERSION_MAJOR"]) < 59:
             "rtsp"
         ] = "-fflags nobuffer -flags low_delay -stimeout 5000000 -user_agent go2rtc/ffmpeg -rtsp_transport tcp -i {input}"
 
+# add hardware acceleration presets for rockchip devices
+# may be removed if frigate uses a go2rtc version that includes these presets
+if go2rtc_config.get("ffmpeg") is None:
+    go2rtc_config["ffmpeg"] = {
+        "h264/rk": "-c:v h264_rkmpp_encoder -g 50 -bf 0",
+        "h265/rk": "-c:v hevc_rkmpp_encoder -g 50 -bf 0",
+    }
+else:
+    if go2rtc_config["ffmpeg"].get("h264/rk") is None:
+        go2rtc_config["ffmpeg"]["h264/rk"] = "-c:v h264_rkmpp_encoder -g 50 -bf 0"
+
+    if go2rtc_config["ffmpeg"].get("h265/rk") is None:
+        go2rtc_config["ffmpeg"]["h265/rk"] = "-c:v hevc_rkmpp_encoder -g 50 -bf 0"
+
 for name in go2rtc_config.get("streams", {}):
     stream = go2rtc_config["streams"][name]
 
     if isinstance(stream, str):
-        go2rtc_config["streams"][name] = go2rtc_config["streams"][name].format(
-            **FRIGATE_ENV_VARS
-        )
+        try:
+            go2rtc_config["streams"][name] = go2rtc_config["streams"][name].format(
+                **FRIGATE_ENV_VARS
+            )
+        except KeyError as e:
+            print(
+                "[ERROR] Invalid substitution found, see https://docs.frigate.video/configuration/restream#advanced-restream-configurations for more info."
+            )
+            sys.exit(e)
+
     elif isinstance(stream, list):
         for i, stream in enumerate(stream):
-            go2rtc_config["streams"][name][i] = stream.format(**FRIGATE_ENV_VARS)
+            try:
+                go2rtc_config["streams"][name][i] = stream.format(**FRIGATE_ENV_VARS)
+            except KeyError as e:
+                print(
+                    "[ERROR] Invalid substitution found, see https://docs.frigate.video/configuration/restream#advanced-restream-configurations for more info."
+                )
+                sys.exit(e)
 
 # add birdseye restream stream if enabled
 if config.get("birdseye", {}).get("restream", False):

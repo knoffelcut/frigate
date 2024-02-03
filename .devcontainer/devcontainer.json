@@ -10,7 +10,7 @@
   "features": {
     "ghcr.io/devcontainers/features/common-utils:1": {}
   },
-  "forwardPorts": [5000, 5001, 5173, 1935, 8554, 8555],
+  "forwardPorts": [5000, 5001, 5173, 8554, 8555],
   "portsAttributes": {
     "5000": {
       "label": "NGINX",
@@ -22,10 +22,6 @@
     },
     "5173": {
       "label": "Vite Server",
-      "onAutoForward": "silent"
-    },
-    "1935": {
-      "label": "RTMP",
       "onAutoForward": "silent"
     },
     "8554": {
@@ -42,7 +38,6 @@
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
-        "ms-python.black-formatter",
         "visualstudioexptteam.vscodeintellicode",
         "mhutchie.git-graph",
         "ms-azuretools.vscode-docker",
@@ -53,13 +48,10 @@
         "csstools.postcss",
         "blanu.vscode-styled-jsx",
         "bradlc.vscode-tailwindcss",
-        "ms-python.isort",
         "charliermarsh.ruff"
       ],
       "settings": {
         "remote.autoForwardPorts": false,
-        "python.linting.pylintEnabled": true,
-        "python.linting.enabled": true,
         "python.formatting.provider": "none",
         "python.languageServer": "Pylance",
         "editor.formatOnPaste": false,
@@ -72,7 +64,7 @@
         "eslint.workingDirectories": ["./web"],
         "isort.args": ["--settings-path=./pyproject.toml"],
         "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true,
           "editor.codeActionsOnSave": {
             "source.fixAll": true,

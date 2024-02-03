@@ -19,6 +19,7 @@ from frigate.config import (
     MqttConfig,
     RecordConfig,
     SnapshotsConfig,
+    ZoomingModeEnum,
 )
 from frigate.const import CLIPS_DIR
 from frigate.events.maintainer import EventTypeEnum
@@ -105,6 +106,10 @@ class TrackedObject:
     def __init__(
         self, camera, colormap, camera_config: CameraConfig, frame_cache, obj_data
     ):
+        # set the score history then remove as it is not part of object state
+        self.score_history = obj_data["score_history"]
+        del obj_data["score_history"]
+
         self.obj_data = obj_data
         self.camera = camera
         self.colormap = colormap
@@ -124,9 +129,6 @@ class TrackedObject:
         self.frame = None
         self.previous = self.to_dict()
 
-        # start the score history
-        self.score_history = [self.obj_data["score"]]
-
     def _is_false_positive(self):
         # once a true positive, always a true positive
         if not self.false_positive:
@@ -136,11 +138,8 @@ class TrackedObject:
         return self.computed_score < threshold
 
     def compute_score(self):
-        scores = self.score_history[:]
-        # pad with zeros if you dont have at least 3 scores
-        if len(scores) < 3:
-            scores += [0.0] * (3 - len(scores))
-        return median(scores)
+        """get median of scores for object."""
+        return median(self.score_history)
 
     def update(self, current_frame_time, obj_data):
         thumb_update = False
@@ -151,6 +150,7 @@ class TrackedObject:
             self.score_history.append(0.0)
         else:
             self.score_history.append(obj_data["score"])
+
         # only keep the last 10 scores
         if len(self.score_history) > 10:
             self.score_history = self.score_history[-10:]
@@ -196,7 +196,7 @@ class TrackedObject:
                     self.zone_presence[name] = zone_score + 1
 
                     # an object is only considered present in a zone if it has a zone inertia of 3+
-                    if zone_score >= zone.inertia:
+                    if self.zone_presence[name] >= zone.inertia:
                         current_zones.append(name)
 
                         if name not in self.entered_zones:
@@ -232,6 +232,9 @@ class TrackedObject:
             if self.obj_data["position_changes"] != obj_data["position_changes"]:
                 significant_change = True
 
+            if self.obj_data["attributes"] != obj_data["attributes"]:
+                significant_change = True
+
             # if the motionless_count reaches the stationary threshold
             if (
                 self.obj_data["motionless_count"]
@@ -243,10 +246,8 @@ class TrackedObject:
             if self.obj_data["frame_time"] - self.previous["frame_time"] > 60:
                 significant_change = True
 
-            # update autotrack at half fps
-            if self.obj_data["frame_time"] - self.previous["frame_time"] > (
-                1 / (self.camera_config.detect.fps / 2)
-            ):
+            # update autotrack at most 3 objects per second
+            if self.obj_data["frame_time"] - self.previous["frame_time"] >= (1 / 3):
                 autotracker_update = True
 
         self.obj_data.update(obj_data)
@@ -496,6 +497,9 @@ class CameraState:
                 # draw thicker box around ptz autotracked object
                 if (
                     self.camera_config.onvif.autotracking.enabled
+                    and self.ptz_autotracker_thread.ptz_autotracker.autotracker_init[
+                        self.name
+                    ]
                     and self.ptz_autotracker_thread.ptz_autotracker.tracked_object[
                         self.name
                     ]
@@ -504,9 +508,43 @@ class CameraState:
                     == self.ptz_autotracker_thread.ptz_autotracker.tracked_object[
                         self.name
                     ].obj_data["id"]
+                    and obj["frame_time"] == frame_time
                 ):
                     thickness = 5
                     color = self.config.model.colormap[obj["label"]]
+
+                    # debug autotracking zooming - show the zoom factor box
+                    if (
+                        self.camera_config.onvif.autotracking.zooming
+                        != ZoomingModeEnum.disabled
+                    ):
+                        max_target_box = self.ptz_autotracker_thread.ptz_autotracker.tracked_object_metrics[
+                            self.name
+                        ]["max_target_box"]
+                        side_length = max_target_box * (
+                            max(
+                                self.camera_config.detect.width,
+                                self.camera_config.detect.height,
+                            )
+                        )
+
+                        centroid_x = (obj["box"][0] + obj["box"][2]) // 2
+                        centroid_y = (obj["box"][1] + obj["box"][3]) // 2
+                        top_left = (
+                            int(centroid_x - side_length // 2),
+                            int(centroid_y - side_length // 2),
+                        )
+                        bottom_right = (
+                            int(centroid_x + side_length // 2),
+                            int(centroid_y + side_length // 2),
+                        )
+                        cv2.rectangle(
+                            frame_copy,
+                            top_left,
+                            bottom_right,
+                            (255, 255, 0),
+                            2,
+                        )
 
                 # draw the bounding boxes on the frame
                 box = obj["box"]

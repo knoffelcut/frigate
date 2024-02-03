@@ -124,10 +124,6 @@ https://HA_URL/api/frigate/notifications/<event-id>/clip.mp4
 
 <a name="streams"></a>
 
-## RTMP stream
-
-RTMP is deprecated and it is recommended to switch to use RTSP restreams.
-
 ## RTSP stream
 
 In order for the live streams to function they need to be accessible on the RTSP
@@ -177,7 +173,7 @@ The Frigate integration seamlessly supports the use of multiple Frigate servers.
 In order for multiple Frigate instances to function correctly, the
 `topic_prefix` and `client_id` parameters must be set differently per server.
 See [MQTT
-configuration](mqtt.md)
+configuration](mqtt)
 for how to set these.
 
 #### API URLs
