@@ -31,7 +31,7 @@ COPY --from=onnx-converter yolov8n.onnx ./
 RUN --mount=type=bind,from=onnx-wheels,source=/onnx-wheels,target=/deps/onnx-wheels \
     pip3 install -U /deps/onnx-wheels/*.whl
 
-# Dev Container w/ TRT
+# Dev Container w/ ONNX
 FROM devcontainer AS devcontainer-onnx
 
 COPY --from=onnx-converter yolov8n.onnx ./
