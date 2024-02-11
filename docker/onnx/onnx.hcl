@@ -80,20 +80,9 @@ target "onnx" {
     rootfs = "target:rootfs"
     wheels = "target:wheels"
   }
+  platforms = ["linux/amd64"]
   target = "frigate-onnx"
   tags = ["frigate-onnx"]
-}
-
-target "onnx-nvidia" {
-  dockerfile = "docker/onnx/Dockerfile.nvidia"
-  context = "."
-  contexts = {
-    onnx-converter = "target:onnx-converter"
-    frigate = "target:frigate"
-    wheels = "target:wheels"
-  }
-  target = "frigate-nvidia-onnx"
-  tags = ["frigate-nvidia-onnx"]
 }
 
 target "devcontainer-onnx" {
@@ -106,4 +95,30 @@ target "devcontainer-onnx" {
   platforms = ["linux/amd64"]
   target = "devcontainer-onnx"
   tags = ["frigate-devcontainer-onnx"]
+}
+
+target "onnx-nvidia" {
+  dockerfile = "docker/onnx/Dockerfile.nvidia"
+  context = "."
+  contexts = {
+    onnx-converter = "target:onnx-converter"
+    frigate = "target:frigate"
+    wheels = "target:wheels"
+  }
+  platforms = ["linux/amd64"]
+  target = "frigate-nvidia-onnx"
+  tags = ["frigate-nvidia-onnx"]
+}
+
+target "devcontainer-onnx-nvidia" {
+  dockerfile = "docker/onnx/Dockerfile.nvidia"
+  context = "."
+  contexts = {
+    onnx-converter = "target:onnx-converter"
+    devcontainer = "target:devcontainer"
+    wheels = "target:wheels"
+  }
+  platforms = ["linux/amd64"]
+  target = "devcontainer-nvidia-onnx"
+  tags = ["frigate-devcontainer-onnx-nvidia"]
 }

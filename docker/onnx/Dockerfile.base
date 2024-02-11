@@ -16,7 +16,7 @@ RUN apt-get -qq update \
     && python3 get-pip.py "pip" \
     && pip install -r /requirements-onnx-convert.txt \
     && pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cpu \
-    && pip3 install ultralytics==8.0.* --no-deps
+    && pip3 install ultralytics==8.0.231 --no-deps
 
 # Get ONNX Model
 RUN cd / && yolo detect export model=yolov8n format=onnx
