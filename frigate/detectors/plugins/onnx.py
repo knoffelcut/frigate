@@ -10,10 +10,11 @@ It should rather go through a whole separate idendification module, in `frigate/
 
 import logging
 import pickle
+from enum import Enum
 
-import scipy.spatial.distance
-import numpy as np
 import cv2
+import numpy as np
+import scipy.spatial.distance
 
 try:
     import onnxruntime
@@ -26,7 +27,7 @@ from pydantic import Field
 from typing_extensions import Literal
 
 from frigate.detectors.detection_api import DetectionApi
-from frigate.detectors.detector_config import BaseDetectorConfig
+from frigate.detectors.detector_config import BaseDetectorConfig, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +46,11 @@ pixel_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
 class_name_to_label = {
-    'skapie': 0,
-    'gertjie': 1,
-    'lola': 2,
-    'charlie': 3,
-    'would-be-lee': 5
+    "skapie": 0,
+    "gertjie": 1,
+    "lola": 2,
+    "charlie": 3,
+    "would-be-lee": 5,
 }
 label_to_class_name = {v: k for k, v in class_name_to_label.items()}
 
@@ -57,8 +58,10 @@ label_to_class_name = {v: k for k, v in class_name_to_label.items()}
 def predict_reid(onnxruntime_session: onnxruntime.InferenceSession, image: np.ndarray):
     image = image[:, :, ::-1]  # BGR2RGB
     # image = image.astype(np.float32)/255.
-    image = (image - pixel_mean)/pixel_std
-    image = np.ascontiguousarray(image.transpose((2, 0, 1))[None, ...].astype(np.float32))
+    image = (image - pixel_mean) / pixel_std
+    image = np.ascontiguousarray(
+        image.transpose((2, 0, 1))[None, ...].astype(np.float32)
+    )
 
     onnxruntime_name_input = onnxruntime_session.get_inputs()[0].name
     onnxruntime_inputs = {onnxruntime_name_input: image}
@@ -68,10 +71,25 @@ def predict_reid(onnxruntime_session: onnxruntime.InferenceSession, image: np.nd
     return d
 
 
+class ModelIdentificationTypeEnum(str, Enum):
+    ssd = "embedding"
+
+
+class ModelIdentificationConfig(ModelConfig):
+    identification_database_path: str = Field(
+        title="Database containing mapping from class names to feature vectors."
+    )
+    model_type: ModelIdentificationTypeEnum = Field(
+        default=ModelIdentificationTypeEnum.ssd, title="Identification Model Type"
+    )
+
+
 class OnnxDetectorConfig(BaseDetectorConfig):
     type: Literal[DETECTOR_KEY]
     device: str = Field(default="CPUExecutionProvider", title="Device Type")
-    # path_reidentification: str = Field(title="Reidentification model path.")
+    model_identification: ModelIdentificationConfig = Field(
+        default=None, title="Identification specific model configuration."
+    )
     # path_reidentification_database: str = Field(title="Reidentification database path.")
 
 
@@ -106,28 +124,42 @@ class OnnxDetector(DetectionApi):
 
         self.nms_threshold = 0.3  # TODO As configurable parameter
 
+        self.h_identification = detector_config.model_identification.height
+        self.w_identification = detector_config.model_identification.width
+
         try:
             logger.debug(
                 f"Loading ONNX Model ({detector_config.model.path}) to {detector_config.device,}"
             )
-            providers = [detector_config.device, ]
-            if 'CPUExecutionProvider' not in providers:
-                providers += ['CPUExecutionProvider', ]
+            providers = [
+                detector_config.device,
+            ]
+            if "CPUExecutionProvider" not in providers:
+                providers += [
+                    "CPUExecutionProvider",
+                ]
             self.onnxruntime_session = onnxruntime.InferenceSession(
-                detector_config.model.path,
-                providers=providers
+                detector_config.model.path, providers=providers
             )
 
-            # TODO MOVE
+            # print(
+            #     "~~~",
+            #     detector_config.model_identification,
+            #     "~~~",
+            # )
+            # exit()
+
+            # # TODO MOVE
+
             self.onnxruntime_session_identification = onnxruntime.InferenceSession(
                 # detector_config.model.path_reidentification,
-                "/media/models/osnet_ain_x1_0_catcam_softmax_cosinelr_5.onnx",
-                providers=providers
+                detector_config.model_identification.path,
+                providers=providers,
             )
 
-            # path_reid_db = detector_config.model.path_reidentification_database
-            path_reid_db = "/media/models/feature_vectors_51cf3122.pkl"
-            with open(path_reid_db, "rb") as f:
+            with open(
+                detector_config.model_identification.identification_database_path, "rb"
+            ) as f:
                 self.feature_vectors_reid = pickle.load(f)
 
             self.X = []
@@ -210,10 +242,10 @@ class OnnxDetector(DetectionApi):
             for detection in results:
                 # Crop and pad
                 _, _, t, l, b, r = detection
-                l = int(round(l*width))
-                r = int(round(r*width))
-                t = int(round(t*height))
-                b = int(round(b*height))
+                l = int(round(l * width))
+                r = int(round(r * width))
+                t = int(round(t * height))
+                b = int(round(b * height))
 
                 pl, l = -min(0, l), max(0, l)
                 pt, t = -min(0, t), max(0, t)
@@ -225,11 +257,13 @@ class OnnxDetector(DetectionApi):
                 crop = crop.transpose((1, 2, 0))
                 if max((pl, pt, pr, pb)) > 0:
                     crop = np.pad(crop, ((pt, pb), (pl, pr), (0, 0)))
-                crop = cv2.resize(crop, (256, 256))  # TODO Unhardcode
+                crop = cv2.resize(crop, (self.w_identification, self.h_identification))
 
                 d = predict_reid(self.onnxruntime_session_identification, crop)
 
-                distances_cosine = scipy.spatial.distance.cdist(d[None, ...], self.X, metric='cosine')[0]
+                distances_cosine = scipy.spatial.distance.cdist(
+                    d[None, ...], self.X, metric="cosine"
+                )[0]
                 distances = distances_cosine
                 idx = np.where(distances < 0.15)[0]
 
