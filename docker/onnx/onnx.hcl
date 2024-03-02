@@ -42,13 +42,13 @@ target wheels {
 
 target devcontainer {
   dockerfile = "docker/main/Dockerfile"
-  platforms = ["linux/amd64"]
+  inherits = ["_build_args"]
   target = "devcontainer"
 }
 
 target frigate {
   dockerfile = "docker/main/Dockerfile"
-  platforms = ["linux/amd64"]
+  inherits = ["_build_args"]
   target = "frigate"
 }
 
@@ -80,7 +80,7 @@ target "onnx" {
     rootfs = "target:rootfs"
     wheels = "target:wheels"
   }
-  platforms = ["linux/amd64"]
+  inherits = ["_build_args"]
   target = "frigate-onnx"
   tags = ["frigate-onnx"]
 }
@@ -92,7 +92,7 @@ target "devcontainer-onnx" {
     wget = "target:wget",
     devcontainer = "target:devcontainer"
   }
-  platforms = ["linux/amd64"]
+  inherits = ["_build_args"]
   target = "devcontainer-onnx"
   tags = ["frigate-devcontainer-onnx"]
 }

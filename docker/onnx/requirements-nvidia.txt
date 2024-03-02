@@ -1,1 +1,1 @@
-onnxruntime-gpu == 1.15.*; platform_machine == 'x86_64'
+onnxruntime-gpu == 1.17.*; platform_machine == 'x86_64'
