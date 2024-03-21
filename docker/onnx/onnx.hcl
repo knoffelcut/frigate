@@ -7,6 +7,15 @@ variable "BASE_IMAGE" {
 variable "SLIM_BASE" {
   default = null
 }
+variable "IMAGE_REPO" {
+  default = null
+}
+variable "VERSION" {
+  default = null
+}
+variable "COMMIT_HASH" {
+  default = null
+}
 
 target "_build_args" {
   args = {
@@ -82,7 +91,7 @@ target "onnx" {
   }
   inherits = ["_build_args"]
   target = "frigate-onnx"
-  tags = ["frigate-onnx"]
+  tags = ["${IMAGE_REPO}:onnx-${ARCH}-${VERSION}-${COMMIT_HASH}"]
 }
 
 target "devcontainer-onnx" {

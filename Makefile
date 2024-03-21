@@ -2,7 +2,7 @@ default_target: local
 
 COMMIT_HASH := $(shell git log -1 --pretty=format:"%h"|tail -1)
 VERSION = 0.13.2
-IMAGE_REPO ?= ghcr.io/blakeblackshear/frigate
+IMAGE_REPO ?= knoffelcut/frigate
 GITHUB_REF_NAME ?= $(shell git rev-parse --abbrev-ref HEAD)
 CURRENT_UID := $(shell id -u)
 CURRENT_GID := $(shell id -g)
@@ -28,6 +28,9 @@ arm64:
 
 build: version amd64 arm64
 	docker buildx build --platform linux/arm64/v8,linux/amd64 --target=frigate --tag $(IMAGE_REPO):$(VERSION)-$(COMMIT_HASH) --file docker/main/Dockerfile .
+
+build-arm64-onnx: version
+	ARCH=arm64 IMAGE_REPO=${IMAGE_REPO} VERSION=$(VERSION) COMMIT_HASH=${COMMIT_HASH} docker buildx bake --file=docker/onnx/onnx.hcl --progress=plain onnx
 
 push: push-boards
 	docker buildx build --push --platform linux/arm64/v8,linux/amd64 --target=frigate --tag $(IMAGE_REPO):${GITHUB_REF_NAME}-$(COMMIT_HASH) --file docker/main/Dockerfile .
