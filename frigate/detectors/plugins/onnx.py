@@ -45,12 +45,15 @@ pixel_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 pixel_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
+# TODO Shis should come from the labelmap
 class_name_to_label = {
     "skapie": 0,
     "gertjie": 1,
     "lola": 2,
     "charlie": 3,
+    "unknown": 4,
     "would-be-lee": 5,
+    "ramses": 6,
 }
 label_to_class_name = {v: k for k, v in class_name_to_label.items()}
 
@@ -177,10 +180,11 @@ class OnnxDetector(DetectionApi):
                 self.y.append(label)
                 self.X.append(d)
 
+            self.y_unknown = class_name_to_label['unknown']
             self.y = np.array(self.y)
             self.X = np.array(self.X)
         except Exception as e:
-            logger.error(e)
+            logger.exception(e)
             raise RuntimeError("failed to create ONNX Runtime Session") from e
 
         input_tensor_description = self.onnxruntime_session.get_inputs()[0]
@@ -274,8 +278,8 @@ class OnnxDetector(DetectionApi):
                 labels = self.y[idx]
 
                 if len(labels) == 0:
-                    confidence = 0.0
-                    label = self.y[np.argmin(distances)]
+                    confidence = 1.0
+                    label = self.y_unknown
                 else:
                     mode = scipy.stats.mode(labels, keepdims=False)
                     label = mode[0]
