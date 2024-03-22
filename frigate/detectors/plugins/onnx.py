@@ -82,6 +82,8 @@ class ModelIdentificationConfig(ModelConfig):
     model_type: ModelIdentificationTypeEnum = Field(
         default=ModelIdentificationTypeEnum.ssd, title="Identification Model Type"
     )
+    width_resize: int = Field(default=128, title="TODO.")
+    height_resize: int = Field(default=128, title="TODO.")
 
 
 class OnnxDetectorConfig(BaseDetectorConfig):
@@ -124,8 +126,17 @@ class OnnxDetector(DetectionApi):
 
         self.nms_threshold = 0.3  # TODO As configurable parameter
 
+        self.h_identification_resize = detector_config.model_identification.height_resize
+        self.w_identification_resize = detector_config.model_identification.width_resize
         self.h_identification = detector_config.model_identification.height
         self.w_identification = detector_config.model_identification.width
+
+        self.il, self.it, self.ir, self.ib = None, None, None, None
+        if (self.h_identification_resize, self.w_identification_resize) != (self.h_identification, self.w_identification):
+            self.il = (self.w_identification_resize - self.w_identification)//2
+            self.it = (self.h_identification_resize - self.h_identification)//2
+            self.ir = self.il + self.w_identification
+            self.ib = self.it + self.h_identification
 
         try:
             logger.debug(
@@ -141,15 +152,6 @@ class OnnxDetector(DetectionApi):
             self.onnxruntime_session = onnxruntime.InferenceSession(
                 detector_config.model.path, providers=providers
             )
-
-            # print(
-            #     "~~~",
-            #     detector_config.model_identification,
-            #     "~~~",
-            # )
-            # exit()
-
-            # # TODO MOVE
 
             self.onnxruntime_session_identification = onnxruntime.InferenceSession(
                 # detector_config.model.path_reidentification,
@@ -257,7 +259,9 @@ class OnnxDetector(DetectionApi):
                 crop = crop.transpose((1, 2, 0))
                 if max((pl, pt, pr, pb)) > 0:
                     crop = np.pad(crop, ((pt, pb), (pl, pr), (0, 0)))
-                crop = cv2.resize(crop, (self.w_identification, self.h_identification))
+                crop = cv2.resize(crop, (self.w_identification_resize, self.h_identification_resize))
+                if self.il is not None:
+                    crop = crop[self.it:self.ib, self.il:self.ir]
 
                 d = predict_reid(self.onnxruntime_session_identification, crop)
 
