@@ -45,19 +45,6 @@ pixel_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 pixel_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
-# TODO Shis should come from the labelmap
-class_name_to_label = {
-    "skapie": 0,
-    "gertjie": 1,
-    "lola": 2,
-    "charlie": 3,
-    "unknown": 4,
-    "would-be-lee": 5,
-    "ramses": 6,
-}
-label_to_class_name = {v: k for k, v in class_name_to_label.items()}
-
-
 def predict_reid(onnxruntime_session: onnxruntime.InferenceSession, image: np.ndarray):
     image = image[:, :, ::-1]  # BGR2RGB
     # image = image.astype(np.float32)/255.
@@ -129,15 +116,20 @@ class OnnxDetector(DetectionApi):
 
         self.nms_threshold = 0.3  # TODO As configurable parameter
 
-        self.h_identification_resize = detector_config.model_identification.height_resize
+        self.h_identification_resize = (
+            detector_config.model_identification.height_resize
+        )
         self.w_identification_resize = detector_config.model_identification.width_resize
         self.h_identification = detector_config.model_identification.height
         self.w_identification = detector_config.model_identification.width
 
         self.il, self.it, self.ir, self.ib = None, None, None, None
-        if (self.h_identification_resize, self.w_identification_resize) != (self.h_identification, self.w_identification):
-            self.il = (self.w_identification_resize - self.w_identification)//2
-            self.it = (self.h_identification_resize - self.h_identification)//2
+        if (self.h_identification_resize, self.w_identification_resize) != (
+            self.h_identification,
+            self.w_identification,
+        ):
+            self.il = (self.w_identification_resize - self.w_identification) // 2
+            self.it = (self.h_identification_resize - self.h_identification) // 2
             self.ir = self.il + self.w_identification
             self.ib = self.it + self.h_identification
 
@@ -169,6 +161,13 @@ class OnnxDetector(DetectionApi):
 
             self.X = []
             self.y = []
+            # Must reverse this way since merged_labelmap is prefilled till 91
+            class_name_to_label = {
+                detector_config.model.merged_labelmap[k]: k
+                for k in sorted(
+                    [k for k in detector_config.model.merged_labelmap.keys()]
+                )[::-1]
+            }
             for _, label, d in self.feature_vectors_reid:
                 try:
                     label = class_name_to_label[label]
@@ -180,7 +179,7 @@ class OnnxDetector(DetectionApi):
                 self.y.append(label)
                 self.X.append(d)
 
-            self.y_unknown = class_name_to_label['unknown']
+            self.y_unknown = class_name_to_label["unknown"]
             self.y = np.array(self.y)
             self.X = np.array(self.X)
         except Exception as e:
@@ -263,9 +262,11 @@ class OnnxDetector(DetectionApi):
                 crop = crop.transpose((1, 2, 0))
                 if max((pl, pt, pr, pb)) > 0:
                     crop = np.pad(crop, ((pt, pb), (pl, pr), (0, 0)))
-                crop = cv2.resize(crop, (self.w_identification_resize, self.h_identification_resize))
+                crop = cv2.resize(
+                    crop, (self.w_identification_resize, self.h_identification_resize)
+                )
                 if self.il is not None:
-                    crop = crop[self.it:self.ib, self.il:self.ir]
+                    crop = crop[self.it : self.ib, self.il : self.ir]
 
                 d = predict_reid(self.onnxruntime_session_identification, crop)
 
@@ -273,7 +274,7 @@ class OnnxDetector(DetectionApi):
                     d[None, ...], self.X, metric="cosine"
                 )[0]
                 distances = distances_cosine
-                idx = np.where(distances < 0.15)[0]
+                idx = np.where(distances < 0.15)[0]  # TODO As configurable parameter
 
                 labels = self.y[idx]
 
@@ -295,9 +296,6 @@ class OnnxDetector(DetectionApi):
                         detection[5],
                     )
                     k += 1
-
-                # class_name = label_to_class_name[label]
-                # print(class_name)
 
             results = np.array(results_).reshape((len(results_), 6))
         return results
