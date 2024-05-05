@@ -188,9 +188,26 @@ def is_label_printable(label) -> bool:
 def calculate_region(
     frame_shape, xmin, ymin, xmax, ymax, model_height, model_width, multiplier=2
 ):
-    # size is the longest edge and divisible by 4
-    region_height = max(model_height, (ymax - ymin) * multiplier)
-    region_width = max(model_width, (xmax - xmin) * multiplier)
+    # Recalculate (x/y)_(min/max) considering we don't want to go outside the boundaries
+    x_offset = (xmin + xmax) / 2
+    y_offset = (ymin + ymax) / 2
+
+    region_height = (ymax - ymin) * multiplier
+    region_width = (xmax - xmin) * multiplier
+
+    xmin = int(np.floor(x_offset - region_width / 2))
+    xmax = int(np.ceil(x_offset + region_width / 2))
+    ymin = int(np.floor(y_offset - region_height / 2))
+    ymax = int(np.ceil(y_offset + region_height / 2))
+
+    xmin = max(0, xmin)
+    xmax = min(frame_shape[1], xmax)
+    ymin = max(0, ymin)
+    ymax = min(frame_shape[0], ymax)
+
+    # # size is the longest edge and divisible by 4
+    region_height = max(model_height, (ymax - ymin))
+    region_width = max(model_width, (xmax - xmin))
 
     size_width = (
         region_height / model_height

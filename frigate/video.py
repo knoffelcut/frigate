@@ -686,7 +686,6 @@ def process_frames(
                 if obj["id"] in stationary_object_ids
             ]
 
-            _regions = regions
             if model_config.consolidate_regions and len(regions) > 1:
                 if len(regions) == 2:
                     print
@@ -709,6 +708,7 @@ def process_frames(
                         1,
                     ),
                 ]
+
             for region in regions:
                 detections.extend(
                     detect(
