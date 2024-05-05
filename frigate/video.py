@@ -35,6 +35,7 @@ from frigate.util.image import (
 )
 from frigate.util.object import (
     box_inside,
+    calculate_region,
     create_tensor_input,
     get_cluster_candidates,
     get_cluster_region,
@@ -685,6 +686,29 @@ def process_frames(
                 if obj["id"] in stationary_object_ids
             ]
 
+            _regions = regions
+            if model_config.consolidate_regions and len(regions) > 1:
+                if len(regions) == 2:
+                    print
+
+                region = (
+                    min(region[0] for region in regions),
+                    min(region[1] for region in regions),
+                    max(region[2] for region in regions),
+                    max(region[3] for region in regions),
+                )
+                regions = [
+                    calculate_region(
+                        frame_shape,
+                        region[0],
+                        region[1],
+                        region[2],
+                        region[3],
+                        model_height,
+                        model_width,
+                        1,
+                    ),
+                ]
             for region in regions:
                 detections.extend(
                     detect(

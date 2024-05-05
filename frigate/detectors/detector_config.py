@@ -39,6 +39,10 @@ class ModelConfig(BaseModel):
     labelmap_path: Optional[str] = Field(title="Label map for custom object detector.")
     width: int = Field(default=320, title="Object detection model input width.")
     height: int = Field(default=320, title="Object detection model input height.")
+    consolidate_regions: bool = Field(
+        default=False,
+        title="Merge motion regions into a single region for object detection",
+    )
     labelmap: Dict[int, str] = Field(
         default_factory=dict, title="Labelmap customization."
     )
