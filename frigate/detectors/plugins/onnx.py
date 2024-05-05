@@ -74,6 +74,7 @@ class ModelIdentificationConfig(ModelConfig):
     )
     width_resize: int = Field(default=128, title="TODO.")
     height_resize: int = Field(default=128, title="TODO.")
+    threshold_reid_neighbours: float = Field(title="TODO.")
 
 
 class OnnxDetectorConfig(BaseDetectorConfig):
@@ -122,6 +123,9 @@ class OnnxDetector(DetectionApi):
         self.w_identification_resize = detector_config.model_identification.width_resize
         self.h_identification = detector_config.model_identification.height
         self.w_identification = detector_config.model_identification.width
+        self.threshold_reid_neighbours = (
+            detector_config.model_identification.threshold_reid_neighbours
+        )
 
         self.il, self.it, self.ir, self.ib = None, None, None, None
         if (self.h_identification_resize, self.w_identification_resize) != (
@@ -274,7 +278,7 @@ class OnnxDetector(DetectionApi):
                     d[None, ...], self.X, metric="cosine"
                 )[0]
                 distances = distances_cosine
-                idx = np.where(distances < 0.15)[0]  # TODO As configurable parameter
+                idx = np.where(distances < self.threshold_reid_neighbours)[0]
 
                 labels = self.y[idx]
 
