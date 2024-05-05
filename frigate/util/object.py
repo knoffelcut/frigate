@@ -147,7 +147,9 @@ def get_camera_regions_grid(
     return grid
 
 
-def get_cluster_region_from_grid(frame_shape, min_region, cluster, boxes, region_grid):
+def get_cluster_region_from_grid(
+    frame_shape, model_height, model_width, cluster, boxes, region_grid
+):
     min_x = frame_shape[1]
     min_y = frame_shape[0]
     max_x = 0
@@ -158,19 +160,30 @@ def get_cluster_region_from_grid(frame_shape, min_region, cluster, boxes, region
         max_x = max(boxes[b][2], max_x)
         max_y = max(boxes[b][3], max_y)
     return get_region_from_grid(
-        frame_shape, [min_x, min_y, max_x, max_y], min_region, region_grid
+        frame_shape,
+        [min_x, min_y, max_x, max_y],
+        model_height,
+        model_width,
+        region_grid,
     )
 
 
 def get_region_from_grid(
     frame_shape: tuple[int],
     cluster: list[int],
-    min_region: int,
+    model_height,
+    model_width,
     region_grid: list[list[dict[str, any]]],
 ) -> list[int]:
     """Get a region for a box based on the region grid."""
     box = calculate_region(
-        frame_shape, cluster[0], cluster[1], cluster[2], cluster[3], min_region
+        frame_shape,
+        cluster[0],
+        cluster[1],
+        cluster[2],
+        cluster[3],
+        model_height,
+        model_width,
     )
     centroid = (
         box[0] + (min(frame_shape[1], box[2]) - box[0]) / 2,
@@ -208,7 +221,8 @@ def get_region_from_grid(
         max(0, centroid[1] - size / 2),
         min(frame_shape[1], centroid[0] + size / 2),
         min(frame_shape[0], centroid[1] + size / 2),
-        min_region,
+        model_height,
+        model_width,
     )
 
 
@@ -338,17 +352,22 @@ def inside_any(box_a, boxes):
     return False
 
 
-def get_cluster_boundary(box, min_region):
+def get_cluster_boundary(
+    box,
+    model_height: int,
+    model_width: int,
+):
     # compute the max region size for the current box (box is 10% of region)
     box_width = box[2] - box[0]
     box_height = box[3] - box[1]
     max_region_area = abs(box_width * box_height) / 0.1
-    max_region_size = max(min_region, int(math.sqrt(max_region_area)))
+    max_region_height = max(model_height, int(math.sqrt(max_region_area)))
+    max_region_width = max(model_width, int(math.sqrt(max_region_area)))
 
     centroid = (box_width / 2 + box[0], box_height / 2 + box[1])
 
-    max_x_dist = int(max_region_size - box_width / 2 * 1.1)
-    max_y_dist = int(max_region_size - box_height / 2 * 1.1)
+    max_x_dist = int(max_region_width - box_width / 2 * 1.1)
+    max_y_dist = int(max_region_height - box_height / 2 * 1.1)
 
     return [
         int(centroid[0] - max_x_dist),
@@ -358,7 +377,7 @@ def get_cluster_boundary(box, min_region):
     ]
 
 
-def get_cluster_candidates(frame_shape, min_region, boxes):
+def get_cluster_candidates(frame_shape, model_height: int, model_width: int, boxes):
     # and create a cluster of other boxes using it's max region size
     # only include boxes where the region is an appropriate(except the region could possibly be smaller?)
     # size in the cluster. in order to be in the cluster, the furthest corner needs to be within x,y offset
@@ -372,7 +391,7 @@ def get_cluster_candidates(frame_shape, min_region, boxes):
             continue
         cluster = [current_index]
         used_boxes.append(current_index)
-        cluster_boundary = get_cluster_boundary(b, min_region)
+        cluster_boundary = get_cluster_boundary(b, model_height, model_width)
         # find all other boxes that fit inside the boundary
         for compare_index, compare_box in enumerate(boxes):
             if compare_index in used_boxes:
@@ -385,12 +404,12 @@ def get_cluster_candidates(frame_shape, min_region, boxes):
             # get the region if you were to add this box to the cluster
             potential_cluster = cluster + [compare_index]
             cluster_region = get_cluster_region(
-                frame_shape, min_region, potential_cluster, boxes
+                frame_shape, model_height, model_width, potential_cluster, boxes
             )
             # if region could be smaller and either box would be too small
             # for the resulting region, dont cluster
             should_cluster = True
-            if (cluster_region[2] - cluster_region[0]) > min_region:
+            if (cluster_region[2] - cluster_region[0]) > model_width:
                 for b in potential_cluster:
                     box = boxes[b]
                     # boxes should be more than 5% of the area of the region
@@ -408,7 +427,7 @@ def get_cluster_candidates(frame_shape, min_region, boxes):
     return [list(tup) for tup in unique]
 
 
-def get_cluster_region(frame_shape, min_region, cluster, boxes):
+def get_cluster_region(frame_shape, model_height, model_width, cluster, boxes):
     min_x = frame_shape[1]
     min_y = frame_shape[0]
     max_x = 0
@@ -419,13 +438,21 @@ def get_cluster_region(frame_shape, min_region, cluster, boxes):
         max_x = max(boxes[b][2], max_x)
         max_y = max(boxes[b][3], max_y)
     return calculate_region(
-        frame_shape, min_x, min_y, max_x, max_y, min_region, multiplier=1.2
+        frame_shape,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+        model_height,
+        model_width,
+        multiplier=1.2,
     )
 
 
 def get_startup_regions(
     frame_shape: tuple[int],
-    region_min_size: int,
+    model_height: int,
+    model_width: int,
     region_grid: list[list[dict[str, any]]],
 ) -> list[list[int]]:
     """Get a list of regions to run on startup."""
@@ -449,7 +476,8 @@ def get_startup_regions(
                 y - size / 2,
                 x + size / 2,
                 y + size / 2,
-                region_min_size,
+                model_height,
+                model_width,
                 multiplier=1,
             )
         )

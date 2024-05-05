@@ -185,30 +185,47 @@ def is_label_printable(label) -> bool:
     return not bool(set(label) - set(printable))
 
 
-def calculate_region(frame_shape, xmin, ymin, xmax, ymax, model_size, multiplier=2):
+def calculate_region(
+    frame_shape, xmin, ymin, xmax, ymax, model_height, model_width, multiplier=2
+):
     # size is the longest edge and divisible by 4
-    size = int((max(xmax - xmin, ymax - ymin) * multiplier) // 4 * 4)
-    # dont go any smaller than the model_size
-    if size < model_size:
-        size = model_size
+    region_height = max(model_height, (ymax - ymin) * multiplier)
+    region_width = max(model_width, (xmax - xmin) * multiplier)
+
+    size_width = (
+        region_height / model_height
+    ) * model_width  # size_width based on height
+
+    if size_width > region_width:
+        size_height = region_height
+    else:
+        size_width = region_width
+        size_height = (region_width / model_width) * model_height
+
+    # Really don't want to round down using: // 4 * 4
+    size_width = int(np.ceil(size_width / 4) * 4)
+    size_height = int(np.ceil(size_height / 4) * 4)
+
+    assert size_width >= region_width
+    assert size_height >= region_height
 
     # x_offset is midpoint of bounding box minus half the size
-    x_offset = int((xmax - xmin) / 2.0 + xmin - size / 2.0)
+    x_offset = int((xmax - xmin) / 2.0 + xmin - size_width / 2.0)
     # if outside the image
     if x_offset < 0:
         x_offset = 0
-    elif x_offset > (frame_shape[1] - size):
-        x_offset = max(0, (frame_shape[1] - size))
+    elif x_offset > (frame_shape[1] - size_width):
+        x_offset = max(0, (frame_shape[1] - size_width))
 
     # y_offset is midpoint of bounding box minus half the size
-    y_offset = int((ymax - ymin) / 2.0 + ymin - size / 2.0)
+    y_offset = int((ymax - ymin) / 2.0 + ymin - size_height / 2.0)
     # # if outside the image
     if y_offset < 0:
         y_offset = 0
-    elif y_offset > (frame_shape[0] - size):
-        y_offset = max(0, (frame_shape[0] - size))
+    elif y_offset > (frame_shape[0] - size_height):
+        y_offset = max(0, (frame_shape[0] - size_height))
 
-    return (x_offset, y_offset, x_offset + size, y_offset + size)
+    return (x_offset, y_offset, x_offset + size_width, y_offset + size_height)
 
 
 def get_yuv_crop(frame_shape, crop):
@@ -288,11 +305,14 @@ def yuv_crop_and_resize(frame, region, height=None):
     # create the yuv region frame
     # make sure the size is a multiple of 4
     # TODO: this should be based on the size after resize now
-    size = (region[3] - region[1]) // 4 * 4
-    yuv_cropped_frame = np.zeros((size + size // 2, size), np.uint8)
+    size_height = (
+        (region[3] - region[1]) // 4 * 4
+    )  # Think of these two as the size of y
+    size_width = (region[2] - region[0]) // 4 * 4
+    yuv_cropped_frame = np.zeros((size_height + size_height // 2, size_width), np.uint8)
     # fill in black
     yuv_cropped_frame[:] = 128
-    yuv_cropped_frame[0:size, 0:size] = 16
+    yuv_cropped_frame[0:size_height, 0:size_width] = 16
 
     # copy the y channel
     yuv_cropped_frame[
@@ -305,22 +325,26 @@ def yuv_crop_and_resize(frame, region, height=None):
 
     # copy u1
     yuv_cropped_frame[
-        size + uv_channel_y_offset : size + uv_channel_y_offset + uv_crop_height,
+        size_height + uv_channel_y_offset : size_height
+        + uv_channel_y_offset
+        + uv_crop_height,
         0 + uv_channel_x_offset : 0 + uv_channel_x_offset + uv_crop_width,
     ] = frame[u1[1] : u1[3], u1[0] : u1[2]]
 
     # copy u2
     yuv_cropped_frame[
-        size + uv_channel_y_offset : size + uv_channel_y_offset + uv_crop_height,
-        size // 2 + uv_channel_x_offset : size // 2
+        size_height + uv_channel_y_offset : size_height
+        + uv_channel_y_offset
+        + uv_crop_height,
+        size_width // 2 + uv_channel_x_offset : size_width // 2
         + uv_channel_x_offset
         + uv_crop_width,
     ] = frame[u2[1] : u2[3], u2[0] : u2[2]]
 
     # copy v1
     yuv_cropped_frame[
-        size + size // 4 + uv_channel_y_offset : size
-        + size // 4
+        size_height + size_height // 4 + uv_channel_y_offset : size_height
+        + size_height // 4
         + uv_channel_y_offset
         + uv_crop_height,
         0 + uv_channel_x_offset : 0 + uv_channel_x_offset + uv_crop_width,
@@ -328,11 +352,11 @@ def yuv_crop_and_resize(frame, region, height=None):
 
     # copy v2
     yuv_cropped_frame[
-        size + size // 4 + uv_channel_y_offset : size
-        + size // 4
+        size_height + size_height // 4 + uv_channel_y_offset : size_height
+        + size_height // 4
         + uv_channel_y_offset
         + uv_crop_height,
-        size // 2 + uv_channel_x_offset : size // 2
+        size_width // 2 + uv_channel_x_offset : size_width // 2
         + uv_channel_x_offset
         + uv_crop_width,
     ] = frame[v2[1] : v2[3], v2[0] : v2[2]]

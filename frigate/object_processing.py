@@ -386,6 +386,7 @@ class TrackedObject:
                 box[2],
                 box[3],
                 box_size,
+                box_size,
                 multiplier=1.1,
             )
             best_frame = best_frame[region[1] : region[3], region[0] : region[2]]
