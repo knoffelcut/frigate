@@ -474,11 +474,12 @@ def detect(
     region_detections = object_detector.detect(tensor_input)
     for d in region_detections:
         box = d[2]
-        size = region[2] - region[0]
-        x_min = int(max(0, (box[1] * size) + region[0]))
-        y_min = int(max(0, (box[0] * size) + region[1]))
-        x_max = int(min(detect_config.width - 1, (box[3] * size) + region[0]))
-        y_max = int(min(detect_config.height - 1, (box[2] * size) + region[1]))
+        size_width = region[2] - region[0]
+        size_height = region[3] - region[1]
+        x_min = int(max(0, (box[1] * size_width) + region[0]))
+        y_min = int(max(0, (box[0] * size_height) + region[1]))
+        x_max = int(min(detect_config.width - 1, (box[3] * size_width) + region[0]))
+        y_max = int(min(detect_config.height - 1, (box[2] * size_height) + region[1]))
 
         # ignore objects that were detected outside the frame
         if (x_min >= detect_config.width - 1) or (y_min >= detect_config.height - 1):
