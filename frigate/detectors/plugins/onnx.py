@@ -1,20 +1,6 @@
-"""
-TODO Reid support was added the hardcoded, dodgy way:
-    Just directly sticking it into this script
-It should rather go through a whole separate idendification module, in `frigate/identification`,
-    i.e. decoupled from the detector,
-    with the corresponding entries in the config file,
-    e.g. path to db
-    detection classes to which re-id must be applied (per reid model)
-"""
-
 import logging
-import pickle
-from enum import Enum
 
-import cv2
 import numpy as np
-import scipy.spatial.distance
 
 try:
     import onnxruntime
@@ -27,7 +13,7 @@ from pydantic import Field
 from typing_extensions import Literal
 
 from frigate.detectors.detection_api import DetectionApi
-from frigate.detectors.detector_config import BaseDetectorConfig, ModelConfig
+from frigate.detectors.detector_config import BaseDetectorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -41,49 +27,10 @@ onnx_type_to_numpy = {
 }
 
 
-pixel_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-pixel_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-
-
-def predict_reid(onnxruntime_session: onnxruntime.InferenceSession, image: np.ndarray):
-    image = image[:, :, ::-1]  # BGR2RGB
-    # image = image.astype(np.float32)/255.
-    image = (image - pixel_mean) / pixel_std
-    image = np.ascontiguousarray(
-        image.transpose((2, 0, 1))[None, ...].astype(np.float32)
-    )
-
-    onnxruntime_name_input = onnxruntime_session.get_inputs()[0].name
-    onnxruntime_inputs = {onnxruntime_name_input: image}
-    output = onnxruntime_session.run(None, onnxruntime_inputs)
-    d = output[0][0]
-
-    return d
-
-
-class ModelIdentificationTypeEnum(str, Enum):
-    ssd = "embedding"
-
-
-class ModelIdentificationConfig(ModelConfig):
-    identification_database_path: str = Field(
-        title="Database containing mapping from class names to feature vectors."
-    )
-    model_type: ModelIdentificationTypeEnum = Field(
-        default=ModelIdentificationTypeEnum.ssd, title="Identification Model Type"
-    )
-    width_resize: int = Field(default=128, title="TODO.")
-    height_resize: int = Field(default=128, title="TODO.")
-    threshold_reid_neighbours: float = Field(title="TODO.")
-
-
+# TODO Potentially move to other configs
 class OnnxDetectorConfig(BaseDetectorConfig):
     type: Literal[DETECTOR_KEY]
     device: str = Field(default="CPUExecutionProvider", title="Device Type")
-    model_identification: ModelIdentificationConfig = Field(
-        default=None, title="Identification specific model configuration."
-    )
-    # path_reidentification_database: str = Field(title="Reidentification database path.")
 
 
 class OnnxDetector(DetectionApi):
@@ -117,26 +64,6 @@ class OnnxDetector(DetectionApi):
 
         self.nms_threshold = 0.3  # TODO As configurable parameter
 
-        self.h_identification_resize = (
-            detector_config.model_identification.height_resize
-        )
-        self.w_identification_resize = detector_config.model_identification.width_resize
-        self.h_identification = detector_config.model_identification.height
-        self.w_identification = detector_config.model_identification.width
-        self.threshold_reid_neighbours = (
-            detector_config.model_identification.threshold_reid_neighbours
-        )
-
-        self.il, self.it, self.ir, self.ib = None, None, None, None
-        if (self.h_identification_resize, self.w_identification_resize) != (
-            self.h_identification,
-            self.w_identification,
-        ):
-            self.il = (self.w_identification_resize - self.w_identification) // 2
-            self.it = (self.h_identification_resize - self.h_identification) // 2
-            self.ir = self.il + self.w_identification
-            self.ib = self.it + self.h_identification
-
         try:
             logger.debug(
                 f"Loading ONNX Model ({detector_config.model.path}) to {detector_config.device,}"
@@ -151,41 +78,6 @@ class OnnxDetector(DetectionApi):
             self.onnxruntime_session = onnxruntime.InferenceSession(
                 detector_config.model.path, providers=providers
             )
-
-            self.onnxruntime_session_identification = onnxruntime.InferenceSession(
-                # detector_config.model.path_reidentification,
-                detector_config.model_identification.path,
-                providers=providers,
-            )
-
-            with open(
-                detector_config.model_identification.identification_database_path, "rb"
-            ) as f:
-                self.feature_vectors_reid = pickle.load(f)
-
-            self.X = []
-            self.y = []
-            # Must reverse this way since merged_labelmap is prefilled till 91
-            class_name_to_label = {
-                detector_config.model.merged_labelmap[k]: k
-                for k in sorted(
-                    [k for k in detector_config.model.merged_labelmap.keys()]
-                )[::-1]
-            }
-            for _, label, d in self.feature_vectors_reid:
-                try:
-                    label = class_name_to_label[label]
-                except KeyError:
-                    continue
-
-                # print(label)
-                # y.append(label)
-                self.y.append(label)
-                self.X.append(d)
-
-            self.y_unknown = class_name_to_label["unknown"]
-            self.y = np.array(self.y)
-            self.X = np.array(self.X)
         except Exception as e:
             logger.exception(e)
             raise RuntimeError("failed to create ONNX Runtime Session") from e
@@ -217,89 +109,4 @@ class OnnxDetector(DetectionApi):
         results = outputs[0][0]
 
         results = self.process_results(results)
-
-        # for object_detected in results.data[0, :]:
-        #     if object_detected[0] != -1:
-        #         logger.debug(object_detected)
-        #     if object_detected[2] < 0.1 or i == 20:
-        #         break
-        #     detections[i] = [
-        #         object_detected[1],  # Label ID
-        #         float(object_detected[2]),  # Confidence
-        #         object_detected[4],  # y_min
-        #         object_detected[3],  # x_min
-        #         object_detected[6],  # y_max
-        #         object_detected[5],  # x_max
-        #     ]
-        #     i += 1
-        # return detections
-        if len(results):
-            idx = cv2.dnn.NMSBoxes(
-                [[l, t, r - l, b - t] for _, _, t, l, b, r in results],
-                [c for _, c, _, _, _, _ in results],
-                0.5,  # Enforced by top-k below
-                self.nms_threshold,
-                top_k=20,
-            )
-            results = [results[i] for i in idx]
-
-            # nchw
-            height, width = tensor_input.shape[-2:]
-
-            k = 0
-            results_ = np.zeros((20, 6), dtype=np.float32)
-            for detection in results:
-                # Crop and pad
-                _, _, t, l, b, r = detection
-                l = int(round(l * width))
-                r = int(round(r * width))
-                t = int(round(t * height))
-                b = int(round(b * height))
-
-                pl, l = -min(0, l), max(0, l)
-                pt, t = -min(0, t), max(0, t)
-                pr, r = max(0, r - width), min(r, width)
-                pb, b = max(0, b - height), min(b, height)
-
-                assert tensor_input.shape[0] == 1
-                crop = tensor_input[0, :, t:b, l:r]
-                crop = crop.transpose((1, 2, 0))
-                if max((pl, pt, pr, pb)) > 0:
-                    crop = np.pad(crop, ((pt, pb), (pl, pr), (0, 0)))
-                crop = cv2.resize(
-                    crop, (self.w_identification_resize, self.h_identification_resize)
-                )
-                if self.il is not None:
-                    crop = crop[self.it : self.ib, self.il : self.ir]
-
-                d = predict_reid(self.onnxruntime_session_identification, crop)
-
-                distances_cosine = scipy.spatial.distance.cdist(
-                    d[None, ...], self.X, metric="cosine"
-                )[0]
-                distances = distances_cosine
-                idx = np.where(distances < self.threshold_reid_neighbours)[0]
-
-                labels = self.y[idx]
-
-                if len(labels) == 0:
-                    confidence = 1.0
-                    label = self.y_unknown
-                else:
-                    mode = scipy.stats.mode(labels, keepdims=False)
-                    label = mode[0]
-                    confidence = mode[1] / len(labels)
-
-                if confidence > 0.5:
-                    results_[k] = (
-                        label,
-                        confidence,
-                        detection[2],
-                        detection[3],
-                        detection[4],
-                        detection[5],
-                    )
-                    k += 1
-
-            results = np.array(results_).reshape((len(results_), 6))
         return results

@@ -11,7 +11,9 @@ import numpy as np
 from setproctitle import setproctitle
 
 from frigate.detectors import create_detector
-from frigate.detectors.detector_config import InputTensorEnum
+from frigate.detectors.detector_config import BaseDetectorConfig, InputTensorEnum
+from frigate.identifiers import create_identifier
+from frigate.identifiers.identifier_config import BaseIdentifierConfig
 from frigate.util.builtin import EventsPerSecond, load_labels
 from frigate.util.image import SharedMemoryFrameManager
 from frigate.util.services import listen
@@ -50,7 +52,13 @@ class LocalObjectDetector(ObjectDetector):
         else:
             self.input_transform = None
 
-        self.detect_api = create_detector(detector_config)
+        # TODO This is hack-ish, but I don't want to duplicate all this code
+        if isinstance(detector_config, BaseDetectorConfig):
+            self.detect_api = create_detector(detector_config)
+        elif isinstance(detector_config, BaseIdentifierConfig):
+            self.detect_api = create_identifier(detector_config)
+        else:
+            raise RuntimeError
 
     def detect(self, tensor_input, threshold=0.4):
         detections = []

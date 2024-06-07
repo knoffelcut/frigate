@@ -504,6 +504,17 @@ def detect(
     return detections
 
 
+def identify(
+    identifier_config,  # TODO Add Typehint  # TODO Keep? All we potentially use is enabled (and that should have been checked earlier)
+    object_identifier,
+    frame,
+    frame_shape: tuple[int],  # TODO Is this necessary?
+    model_config,
+    detections: list[tuple[any]],
+):
+    raise NotImplementedError
+
+
 def process_frames(
     camera_name: str,
     inter_process_queue: mp.Queue,
@@ -722,6 +733,9 @@ def process_frames(
                         object_filters,
                     )
                 )
+
+            if None:
+                identify(frame, frame_shape, detections)
 
             consolidated_detections = reduce_detections(frame_shape, detections)
 

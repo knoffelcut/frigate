@@ -72,6 +72,10 @@ class FrigateApp:
         self.detectors: dict[str, ObjectDetectProcess] = {}
         self.detection_out_events: dict[str, MpEvent] = {}
         self.detection_shms: list[mp.shared_memory.SharedMemory] = []
+        self.identification_queue: Queue = mp.Queue()
+        self.identifiers: dict[str, ObjectDetectProcess] = {}
+        self.identification_out_events: dict[str, MpEvent] = {}
+        self.identification_shms: list[mp.shared_memory.SharedMemory] = []
         self.log_queue: Queue = mp.Queue()
         self.plus_api = PlusApi()
         self.camera_metrics: dict[str, CameraMetricsTypes] = {}
@@ -464,6 +468,49 @@ class FrigateApp:
                 detector_config,
             )
 
+    def start_identifiers(self) -> None:
+        # TODO Duplicate of function above, with some variable name changes
+        for name in self.config.cameras.keys():
+            name = f"{name}_identifier"
+            self.identification_out_events[name] = mp.Event()
+
+            try:
+                largest_frame = max(
+                    [
+                        identifier.model.height_resize
+                        * identifier.model.width_resize
+                        * 3
+                        for (_, identifier) in self.config.identifiers.items()
+                    ]
+                )
+                shm_in = mp.shared_memory.SharedMemory(
+                    name=name,
+                    create=True,
+                    size=largest_frame,
+                )
+            except FileExistsError:
+                shm_in = mp.shared_memory.SharedMemory(name=name)
+
+            try:
+                # Batch size of 1 (instead of 2) is required here, but leaving it at 20 allows us to implement
+                # batched identification in the future (and prevents and issue in object_detection.py)
+                shm_out = mp.shared_memory.SharedMemory(
+                    name=f"out-{name}", create=True, size=20 * 6 * 4
+                )
+            except FileExistsError:
+                shm_out = mp.shared_memory.SharedMemory(name=f"out-{name}")
+
+            self.identification_shms.append(shm_in)
+            self.identification_shms.append(shm_out)
+
+        for name, identification_config in self.config.identifiers.items():
+            self.identifiers[name] = ObjectDetectProcess(
+                name,
+                self.identification_queue,
+                self.identification_out_events,
+                identification_config,
+            )
+
     def start_ptz_autotracker(self) -> None:
         self.ptz_autotracker_thread = PtzAutoTrackerThread(
             self.config,
@@ -689,6 +736,7 @@ class FrigateApp:
             self.log_process.terminate()
             sys.exit(1)
         self.start_detectors()
+        self.start_identifiers()
         self.start_video_output_processor()
         self.start_ptz_autotracker()
         self.init_historical_regions()
