@@ -477,9 +477,7 @@ class FrigateApp:
             try:
                 largest_frame = max(
                     [
-                        identifier.model.height_resize
-                        * identifier.model.width_resize
-                        * 3
+                        identifier.model.height * identifier.model.width * 3
                         for (_, identifier) in self.config.identifiers.items()
                     ]
                 )
@@ -580,6 +578,9 @@ class FrigateApp:
                     self.config.model.merged_labelmap,
                     self.detection_queue,
                     self.detection_out_events[name],
+                    self.config.model_identification,
+                    self.identification_queue,
+                    self.identification_out_events[f"{name}_identifier"],
                     self.detected_frames_queue,
                     self.inter_process_queue,
                     self.camera_metrics[name],

@@ -9,9 +9,15 @@ import threading
 import time
 
 import cv2
+import numpy as np
 from setproctitle import setproctitle
 
-from frigate.config import CameraConfig, DetectConfig, ModelConfig
+from frigate.config import (
+    CameraConfig,
+    DetectConfig,
+    ModelConfig,
+    ModelIdentifierConfig,
+)
 from frigate.const import (
     ALL_ATTRIBUTE_LABELS,
     ATTRIBUTE_LABEL_MAP,
@@ -387,6 +393,9 @@ def track_camera(
     labelmap,
     detection_queue,
     result_connection,
+    model_identification_config,
+    identification_queue,
+    result_connection_identification,
     detected_objects_queue,
     inter_process_queue,
     process_info,
@@ -428,6 +437,14 @@ def track_camera(
     object_detector = RemoteObjectDetector(
         name, labelmap, detection_queue, result_connection, model_config, stop_event
     )
+    object_identifier = RemoteObjectDetector(
+        f"{name}_identifier",
+        model_identification_config.merged_labelmap,
+        identification_queue,
+        result_connection_identification,
+        model_identification_config,
+        stop_event,
+    )
 
     object_tracker = NorfairTracker(config, ptz_metrics)
 
@@ -440,10 +457,12 @@ def track_camera(
         region_grid_queue,
         frame_shape,
         model_config,
+        model_identification_config,
         config.detect,
         frame_manager,
         motion_detector,
         object_detector,
+        object_identifier,
         object_tracker,
         detected_objects_queue,
         process_info,
@@ -508,11 +527,35 @@ def identify(
     identifier_config,  # TODO Add Typehint  # TODO Keep? All we potentially use is enabled (and that should have been checked earlier)
     object_identifier,
     frame,
-    frame_shape: tuple[int],  # TODO Is this necessary?
     model_config,
     detections: list[tuple[any]],
 ):
-    raise NotImplementedError
+    for i, det in enumerate(detections):
+        # TODO Should do something similar to the regions selection and resizing here (that I implemented) to support non-square aspect ratios
+        # TODO Can do something similar to image.calculate_region(.., multiplier=1, ..), without the outside the image constraint
+        assert model_config.height_resize == model_config.width_resize
+        assert model_config.height == model_config.width
+        x_min, y_min, x_max, y_max = det[2]
+        width = x_max - x_min
+        height = y_max - y_min
+        size = max(width, height)
+        size = (size / model_config.width_resize) * model_config.width
+        size = int(np.ceil(size / 4) * 4)
+        x_center = x_min + width // 2
+        y_center = y_min + height // 2
+        x_min = x_center - size // 2
+        x_max = x_center + size // 2
+        y_min = y_center - size // 2
+        y_max = y_center + size // 2
+
+        region = x_min, y_min, x_max, y_max
+        # TODO When adding borders here, should add 127 to the sides
+        tensor_input = create_tensor_input(frame, model_config, region)
+
+        detections_identified = object_identifier.detect(tensor_input)
+        detections[i] = detections_identified[0][:2] + det[2:]
+
+    return detections
 
 
 def process_frames(
@@ -522,10 +565,12 @@ def process_frames(
     region_grid_queue: mp.Queue,
     frame_shape,
     model_config: ModelConfig,
+    model_identification_config: ModelIdentifierConfig,
     detect_config: DetectConfig,
     frame_manager: FrameManager,
     motion_detector: MotionDetector,
     object_detector: RemoteObjectDetector,
+    object_identifier: RemoteObjectDetector,
     object_tracker: ObjectTracker,
     detected_objects_queue: mp.Queue,
     process_info: dict,
@@ -699,9 +744,6 @@ def process_frames(
             ]
 
             if model_config.consolidate_regions and len(regions) > 1:
-                if len(regions) == 2:
-                    print
-
                 region = (
                     min(region[0] for region in regions),
                     min(region[1] for region in regions),
@@ -734,8 +776,14 @@ def process_frames(
                     )
                 )
 
-            if None:
-                identify(frame, frame_shape, detections)
+            if detections:
+                detections = identify(
+                    detect_config,
+                    object_identifier,
+                    frame,
+                    model_identification_config,
+                    detections,
+                )
 
             consolidated_detections = reduce_detections(frame_shape, detections)
 

@@ -13,7 +13,6 @@ import numpy as np
 from pydantic import BaseModel, Extra, Field, parse_obj_as, validator
 from pydantic.fields import PrivateAttr
 
-import frigate.identifiers
 from frigate.const import (
     ALL_ATTRIBUTE_LABELS,
     AUDIO_MIN_CONFIDENCE,
@@ -34,6 +33,7 @@ from frigate.ffmpeg_presets import (
 )
 from frigate.identifiers import IdentifierConfig
 from frigate.identifiers.identifier_config import BaseIdentifierConfig
+from frigate.identifiers.identifier_config import ModelConfig as ModelIdentifierConfig
 from frigate.plus import PlusApi
 from frigate.util.builtin import (
     deep_merge,
@@ -1059,8 +1059,8 @@ class FrigateConfig(FrigateBaseModel):
         default=DEFAULT_DETECTORS,
         title="Detector hardware configuration.",
     )
-    model_identification: frigate.identifiers.ModelConfig = Field(
-        default_factory=frigate.identifiers.ModelConfig,
+    model_identification: ModelIdentifierConfig = Field(
+        default_factory=ModelIdentifierConfig,
         title="Identification model configuration.",
     )
     identifiers: Dict[str, BaseIdentifierConfig] = Field(
@@ -1327,7 +1327,7 @@ class FrigateConfig(FrigateBaseModel):
                 identifier_config.model = config.model_identification
             else:
                 model = identifier_config.model
-                schema = frigate.identifiers.ModelConfig.schema()["properties"]
+                schema = ModelIdentifierConfig.schema()["properties"]
                 if (
                     model.width != schema["width"]["default"]
                     or model.height != schema["height"]["default"]
@@ -1349,9 +1349,7 @@ class FrigateConfig(FrigateBaseModel):
                 "path" in merged_model
             )  # TODO Can likely check this as part of config
 
-            identifier_config.model = frigate.identifiers.ModelConfig.parse_obj(
-                merged_model
-            )
+            identifier_config.model = ModelIdentifierConfig.parse_obj(merged_model)
             identifier_config.model.check_and_load_plus_model(
                 plus_api, identifier_config.type
             )
