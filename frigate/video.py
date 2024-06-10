@@ -783,17 +783,17 @@ def process_frames(
                     )
                 )
 
-            if detections:
-                detections = identify(
+            consolidated_detections = reduce_detections(frame_shape, detections)
+
+            if consolidated_detections:
+                consolidated_detections = identify(
                     object_identifier,
                     frame,
                     model_identification_config,
-                    detections,
+                    consolidated_detections,
                     objects_to_track,
                     object_filters,
                 )
-
-            consolidated_detections = reduce_detections(frame_shape, detections)
 
             # if detection was run on this frame, consolidate
             if len(regions) > 0:
