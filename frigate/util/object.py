@@ -298,7 +298,7 @@ def create_tensor_input(frame, model_config: ModelConfig, region):
         cropped_frame = cv2.resize(
             cropped_frame,
             dsize=(model_config.width, model_config.height),
-            interpolation=cv2.INTER_LINEAR,
+            interpolation=model_config.interpolation,
         )
 
     # Expand dimensions since the model expects images to have shape: [1, height, width, 3]

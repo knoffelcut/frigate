@@ -5,9 +5,10 @@ import os
 from enum import Enum
 from typing import Dict, Optional, Tuple
 
+import cv2
 import matplotlib.pyplot as plt
 import requests
-from pydantic import BaseModel, Extra, Field
+from pydantic import BaseModel, Extra, Field, validator
 from pydantic.fields import PrivateAttr
 
 from frigate.plus import PlusApi
@@ -34,11 +35,22 @@ class ModelTypeEnum(str, Enum):
     yolov8 = "yolov8"
 
 
+interpolation_map = {
+    "nearest": cv2.INTER_NEAREST,
+    "linear": cv2.INTER_LINEAR,
+    "bilinear": cv2.INTER_LINEAR,
+}
+
+
 class ModelConfig(BaseModel):
     path: Optional[str] = Field(title="Custom Object detection model path.")
     labelmap_path: Optional[str] = Field(title="Label map for custom object detector.")
     width: int = Field(default=320, title="Object detection model input width.")
     height: int = Field(default=320, title="Object detection model input height.")
+    interpolation: int = Field(
+        default=cv2.INTER_LINEAR,
+        title="Interpolation method to use when resizing input.",
+    )
     consolidate_regions: bool = Field(
         default=False,
         title="Merge motion regions into a single region for object detection",
@@ -58,6 +70,17 @@ class ModelConfig(BaseModel):
     _merged_labelmap: Optional[Dict[int, str]] = PrivateAttr()
     _colormap: Dict[int, Tuple[int, int, int]] = PrivateAttr()
     _model_hash: str = PrivateAttr()
+
+    @validator("interpolation", pre=True)
+    def map_interpolation(cls, value):
+        if isinstance(value, int):
+            return value
+        try:
+            return interpolation_map[value]
+        except KeyError:
+            raise ValueError(
+                f"interpolation ({value}) should be one of: {interpolation_map.keys()}"
+            )
 
     @property
     def merged_labelmap(self) -> Dict[int, str]:
