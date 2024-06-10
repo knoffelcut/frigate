@@ -524,12 +524,14 @@ def detect(
 
 
 def identify(
-    identifier_config,  # TODO Add Typehint  # TODO Keep? All we potentially use is enabled (and that should have been checked earlier)
     object_identifier,
     frame,
     model_config,
     detections: list[tuple[any]],
+    objects_to_track,
+    object_filters,
 ):
+    detections_ = []
     for i, det in enumerate(detections):
         # TODO Should do something similar to the regions selection and resizing here (that I implemented) to support non-square aspect ratios
         # TODO Can do something similar to image.calculate_region(.., multiplier=1, ..), without the outside the image constraint
@@ -553,9 +555,14 @@ def identify(
         tensor_input = create_tensor_input(frame, model_config, region)
 
         detections_identified = object_identifier.detect(tensor_input)
-        detections[i] = detections_identified[0][:2] + det[2:]
+        detection_identified = detections_identified[0][:2] + det[2:]
 
-    return detections
+        # apply object filters
+        if is_object_filtered(detection_identified, objects_to_track, object_filters):
+            continue
+        detections_.append(detection_identified)
+
+    return detections_
 
 
 def process_frames(
@@ -778,11 +785,12 @@ def process_frames(
 
             if detections:
                 detections = identify(
-                    detect_config,
                     object_identifier,
                     frame,
                     model_identification_config,
                     detections,
+                    objects_to_track,
+                    object_filters,
                 )
 
             consolidated_detections = reduce_detections(frame_shape, detections)
