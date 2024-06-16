@@ -555,6 +555,8 @@ def identify(
         tensor_input = create_tensor_input(frame, model_config, region)
 
         detections_identified = object_identifier.detect(tensor_input)
+        if len(detections_identified) < 1:
+            continue
         detection_identified = detections_identified[0][:2] + det[2:]
 
         # apply object filters
