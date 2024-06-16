@@ -1,1 +1,2 @@
 onnxruntime-gpu == 1.17.*; platform_machine == 'x86_64'
+numpy < 2.0.0
