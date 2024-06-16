@@ -149,7 +149,10 @@ class OnnxDetector(IdentificationApi):
 
     def __del__(self):
         """Free CUDA memories."""
-        del self.onnxruntime_session  # FWIW
+        try:
+            del self.onnxruntime_session  # FWIW
+        except AttributeError:
+            pass
 
     def detect_raw(self, tensor_input):
         # normalize
