@@ -33,6 +33,7 @@ class ModelTypeEnum(str, Enum):
     yolox = "yolox"
     yolov5 = "yolov5"
     yolov8 = "yolov8"
+    yolov10 = "yolov10"
 
 
 interpolation_map = {

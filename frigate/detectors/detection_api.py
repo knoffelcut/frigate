@@ -99,6 +99,23 @@ class DetectionApi(ABC):
                     object_detected[:4],
                 )
             return detections
+        elif self.model_type == ModelTypeEnum.yolov10:
+            # filter out lines with scores below threshold
+            dets = results[results[:, 4] > self.min_score, :]
+            # limit to top 20 scores, descending order
+            ordered = dets[dets[:, 4].argsort()[::-1][:20]]
+            detections = np.zeros((20, 6), np.float32)
+
+            for i, object_detected in enumerate(ordered):
+                detections[i] = [
+                    object_detected[5],
+                    object_detected[4],
+                    object_detected[1] / self.h,
+                    object_detected[0] / self.w,
+                    object_detected[3] / self.h,
+                    object_detected[2] / self.w,
+                ]
+            return detections
         elif self.model_type == ModelTypeEnum.yolov5:
             output_data = results
             # filter out lines with scores below threshold
