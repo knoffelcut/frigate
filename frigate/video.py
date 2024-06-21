@@ -605,6 +605,10 @@ def process_frames(
 
     model_height, model_width = model_config.height, model_config.width
 
+    min_score = min(
+        object_filter.min_score for object_filter in object_filters.values()
+    )
+
     while not stop_event.is_set():
         if (
             datetime.datetime.now().astimezone(datetime.timezone.utc)
@@ -785,7 +789,9 @@ def process_frames(
                     )
                 )
 
-            consolidated_detections = reduce_detections(frame_shape, detections)
+            consolidated_detections = reduce_detections(
+                frame_shape, detections, min_score
+            )
 
             if consolidated_detections:
                 consolidated_detections = identify(

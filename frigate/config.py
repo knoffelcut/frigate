@@ -1306,6 +1306,16 @@ class FrigateConfig(FrigateBaseModel):
                 config.model.dict(exclude_unset=True),
             )
 
+            min_score = merged_model.get("min_score", config.model.min_score)
+            class_names = set(
+                class_name for class_name in config.model.merged_labelmap.values()
+            )
+            for config_camera in config.cameras.values():
+                for object_name, object_filter in config_camera.objects.filters.items():
+                    if object_name in class_names:
+                        min_score = min(min_score, object_filter.min_score)
+            merged_model["min_score"] = min_score
+
             if "path" not in merged_model:
                 if detector_config.type == "cpu":
                     merged_model["path"] = "/cpu_model.tflite"
@@ -1344,6 +1354,18 @@ class FrigateConfig(FrigateBaseModel):
                 identifier_config.model.dict(exclude_unset=True),
                 config.model_identification.dict(exclude_unset=True),
             )
+
+            # TODO Need to check this - implemented without checking in debug mode
+            min_score = merged_model.get("min_score", config.model.min_score)
+            class_names = set(
+                class_name
+                for class_name in config.model_identification.merged_labelmap.values()
+            )
+            for config_camera in config.cameras.values():
+                for object_name, object_filter in config_camera.objects.filters.items():
+                    if object_name in class_names:
+                        min_score = min(min_score, object_filter.min_score)
+            merged_model["min_score"] = min_score
 
             assert (
                 "path" in merged_model

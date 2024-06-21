@@ -486,12 +486,13 @@ def get_startup_regions(
 
 
 def reduce_detections(
-    frame_shape: tuple[int],
-    all_detections: list[tuple[any]],
+    frame_shape: tuple[int], all_detections: list[tuple[any]], min_score: float = 0.5
 ) -> list[tuple[any]]:
     """Take a list of detections and reduce overlaps to create a list of confident detections."""
 
-    def reduce_overlapping_detections(detections: list[tuple[any]]) -> list[tuple[any]]:
+    def reduce_overlapping_detections(
+        detections: list[tuple[any]], min_score: float = 0.5
+    ) -> list[tuple[any]]:
         """apply non-maxima suppression to suppress weak, overlapping bounding boxes."""
         detected_object_groups = defaultdict(lambda: [])
         for detection in detections:
@@ -515,10 +516,15 @@ def reduce_detections(
             # reduce confidences for objects that are on edge of region
             # 0.6 should be used to ensure that the object is still considered and not dropped
             # due to min score requirement of NMSBoxes
-            confidences = [0.6 if clipped(o, frame_shape) else o[1] for o in group]
+            confidences = [
+                (min_score + 0.01) if clipped(o, frame_shape) else o[1] for o in group
+            ]
 
             idxs = cv2.dnn.NMSBoxes(
-                boxes, confidences, 0.5, LABEL_NMS_MAP.get(label, LABEL_NMS_DEFAULT)
+                boxes,
+                confidences,
+                min_score,
+                LABEL_NMS_MAP.get(label, LABEL_NMS_DEFAULT),
             )
 
             # add objects
@@ -580,5 +586,5 @@ def reduce_detections(
         return consolidated_detections
 
     return get_consolidated_object_detections(
-        reduce_overlapping_detections(all_detections)
+        reduce_overlapping_detections(all_detections, min_score)
     )

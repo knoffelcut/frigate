@@ -67,6 +67,10 @@ class ModelConfig(BaseModel):
     model_type: ModelTypeEnum = Field(
         default=ModelTypeEnum.ssd, title="Object Detection Model Type"
     )
+    min_score = Field(
+        default=0.5,
+        title="Minimum detection confidence for object to be counted. Merged as the minimum of min_score (this value) and the minimum of the object filters in the labelmap.",
+    )
     _merged_labelmap: Optional[Dict[int, str]] = PrivateAttr()
     _colormap: Dict[int, Tuple[int, int, int]] = PrivateAttr()
     _model_hash: str = PrivateAttr()

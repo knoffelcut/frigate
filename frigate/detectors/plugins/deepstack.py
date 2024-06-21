@@ -28,6 +28,7 @@ class DeepStack(DetectionApi):
     type_key = DETECTOR_KEY
 
     def __init__(self, detector_config: DeepstackDetectorConfig):
+        super().__init__(detector_config)
         self.api_url = detector_config.api_url
         self.api_timeout = detector_config.api_timeout
         self.api_key = detector_config.api_key
@@ -69,8 +70,8 @@ class DeepStack(DetectionApi):
 
         for i, detection in enumerate(response_json.get("predictions")):
             logger.debug(f"Response: {detection}")
-            if detection["confidence"] < 0.4:
-                logger.debug("Break due to confidence < 0.4")
+            if detection["confidence"] < self.min_score:
+                logger.debug(f"Break due to confidence < {self.min_score}")
                 break
             label = self.get_label_index(detection["label"])
             if label < 0:

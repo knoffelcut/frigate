@@ -13,7 +13,7 @@ class DetectionApi(ABC):
 
     @abstractmethod
     def __init__(self, detector_config):
-        pass
+        self.min_score = detector_config.model.min_score
 
     @abstractmethod
     def detect_raw(self, tensor_input):
@@ -38,7 +38,7 @@ class DetectionApi(ABC):
             for object_detected in results.data[0, :]:
                 if object_detected[0] != -1:
                     logger.debug(object_detected)
-                if object_detected[2] < 0.1 or i == 20:
+                if object_detected[2] < self.min_score or i == 20:
                     break
                 detections[i] = [
                     object_detected[1],  # Label ID
@@ -63,6 +63,7 @@ class DetectionApi(ABC):
             class_pred = np.argmax(image_pred[:, 5 : 5 + self.num_classes], axis=1)
             class_pred = np.expand_dims(class_pred, axis=1)
 
+            # Below 0.3 is not eq. to min_score
             conf_mask = (image_pred[:, 4] * class_conf.squeeze() >= 0.3).squeeze()
             # Detections ordered as (x1, y1, x2, y2, obj_conf, class_conf, class_pred)
             dets = np.concatenate((image_pred[:, :5], class_conf, class_pred), axis=1)
@@ -86,9 +87,9 @@ class DetectionApi(ABC):
             # add scores to the last column
             dets = np.concatenate((output_data, scores), axis=1)
             # filter out lines with scores below threshold
-            dets = dets[dets[:, -1] > 0.5, :]
+            dets = dets[dets[:, -1] > self.min_score, :]
             # limit to top 20 scores, descending order
-            ordered = dets[dets[:, -1].argsort()[::-1]][:20]
+            ordered = dets[dets[:, -1].argsort()[::-1][:20]]
             detections = np.zeros((20, 6), np.float32)
 
             for i, object_detected in enumerate(ordered):
@@ -101,7 +102,7 @@ class DetectionApi(ABC):
         elif self.model_type == ModelTypeEnum.yolov5:
             output_data = results
             # filter out lines with scores below threshold
-            conf_mask = (output_data[:, 4] >= 0.5).squeeze()
+            conf_mask = (output_data[:, 4] >= self.min_score).squeeze()
             output_data = output_data[conf_mask]
             # limit to top 20 scores, descending order
             ordered = output_data[output_data[:, 4].argsort()[::-1]][:20]

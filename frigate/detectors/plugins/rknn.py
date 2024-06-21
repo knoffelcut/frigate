@@ -42,6 +42,7 @@ class Rknn(DetectionApi):
     type_key = DETECTOR_KEY
 
     def __init__(self, config: RknnDetectorConfig):
+        super().__init__(config)
         # create symlink for Home Assistant add on
         if not os.path.isfile("/proc/device-tree/compatible"):
             if os.path.isfile("/device-tree/compatible"):
@@ -156,8 +157,8 @@ class Rknn(DetectionApi):
             results[:, 4:], axis=1
         )  # array shape (2100,); max confidence of each row
 
-        # remove lines with score scores < 0.4
-        filtered_arg = np.argwhere(scores > 0.4)
+        # remove lines with score scores < self.min_score
+        filtered_arg = np.argwhere(scores > self.min_score)
         results = results[filtered_arg[:, 0]]
         scores = scores[filtered_arg[:, 0]]
 

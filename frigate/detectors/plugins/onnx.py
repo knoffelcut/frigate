@@ -53,6 +53,7 @@ class OnnxDetector(DetectionApi):
         return self.onnxruntime_session.run(None, onnxruntime_inputs)
 
     def __init__(self, detector_config: OnnxDetectorConfig):
+        super().__init__(detector_config)
         assert (
             ONNX_SUPPORT
         ), f"ONNX libraries not found, {DETECTOR_KEY} detector not present"
@@ -61,8 +62,6 @@ class OnnxDetector(DetectionApi):
 
         self.h = detector_config.model.height
         self.w = detector_config.model.width
-
-        self.nms_threshold = 0.3  # TODO As configurable parameter
 
         try:
             logger.debug(

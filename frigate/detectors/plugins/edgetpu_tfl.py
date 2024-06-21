@@ -27,6 +27,7 @@ class EdgeTpuTfl(DetectionApi):
     type_key = DETECTOR_KEY
 
     def __init__(self, detector_config: EdgeTpuDetectorConfig):
+        super().__init__(detector_config)
         device_config = {}
         if detector_config.device is not None:
             device_config = {"device": detector_config.device}
@@ -69,7 +70,7 @@ class EdgeTpuTfl(DetectionApi):
         detections = np.zeros((20, 6), np.float32)
 
         for i in range(count):
-            if scores[i] < 0.4 or i == 20:
+            if scores[i] < self.min_score or i == 20:
                 break
             detections[i] = [
                 class_ids[i],

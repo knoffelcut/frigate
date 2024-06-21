@@ -210,7 +210,7 @@ class RemoteObjectDetector:
         )
         self.out_np_shm = np.ndarray((20, 6), dtype=np.float32, buffer=self.out_shm.buf)
 
-    def detect(self, tensor_input, threshold=0.4):
+    def detect(self, tensor_input):
         detections = []
 
         if self.stop_event.is_set():
@@ -227,8 +227,6 @@ class RemoteObjectDetector:
             return detections
 
         for d in self.out_np_shm:
-            if d[1] < threshold:
-                break
             detections.append(
                 (self.labels[int(d[0])], float(d[1]), (d[2], d[3], d[4], d[5]))
             )
