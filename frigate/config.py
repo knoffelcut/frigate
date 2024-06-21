@@ -63,7 +63,7 @@ if os.path.isdir("/run/secrets"):
 DEFAULT_TRACKED_OBJECTS = ["person"]
 DEFAULT_LISTEN_AUDIO = ["bark", "fire_alarm", "scream", "speech", "yell"]
 DEFAULT_DETECTORS = {"cpu": {"type": "cpu"}}
-DEFAULT_IDENTIFIERS = {"cpu": {"type": "cpu"}}  # TODO Should be None
+DEFAULT_IDENTIFIERS = {}
 DEFAULT_DETECT_DIMENSIONS = {"width": 1280, "height": 720}
 DEFAULT_TIME_LAPSE_FFMPEG_ARGS = "-vf setpts=0.04*PTS -r 30"
 
@@ -1060,7 +1060,8 @@ class FrigateConfig(FrigateBaseModel):
         title="Detector hardware configuration.",
     )
     model_identification: ModelIdentifierConfig = Field(
-        default_factory=ModelIdentifierConfig,
+        default=None,
+        # default_factory=ModelIdentifierConfig,
         title="Identification model configuration.",
     )
     identifiers: Dict[str, BaseIdentifierConfig] = Field(

@@ -437,14 +437,17 @@ def track_camera(
     object_detector = RemoteObjectDetector(
         name, labelmap, detection_queue, result_connection, model_config, stop_event
     )
-    object_identifier = RemoteObjectDetector(
-        f"{name}_identifier",
-        model_identification_config.merged_labelmap,
-        identification_queue,
-        result_connection_identification,
-        model_identification_config,
-        stop_event,
-    )
+    if model_identification_config is not None:
+        object_identifier = RemoteObjectDetector(
+            f"{name}_identifier",
+            model_identification_config.merged_labelmap,
+            identification_queue,
+            result_connection_identification,
+            model_identification_config,
+            stop_event,
+        )
+    else:
+        object_identifier = None
 
     object_tracker = NorfairTracker(config, ptz_metrics)
 
@@ -793,7 +796,7 @@ def process_frames(
                 frame_shape, detections, min_score
             )
 
-            if consolidated_detections:
+            if consolidated_detections and object_identifier:
                 consolidated_detections = identify(
                     object_identifier,
                     frame,

@@ -470,6 +470,9 @@ class FrigateApp:
 
     def start_identifiers(self) -> None:
         # TODO Duplicate of function above, with some variable name changes
+        if not self.config.identifiers:
+            return
+
         for name in self.config.cameras.keys():
             name = f"{name}_identifier"
             self.identification_out_events[name] = mp.Event()
@@ -580,7 +583,9 @@ class FrigateApp:
                     self.detection_out_events[name],
                     self.config.model_identification,
                     self.identification_queue,
-                    self.identification_out_events[f"{name}_identifier"],
+                    self.identification_out_events[f"{name}_identifier"]
+                    if self.identifiers
+                    else None,
                     self.detected_frames_queue,
                     self.inter_process_queue,
                     self.camera_metrics[name],
