@@ -1,6 +1,7 @@
 import logging
 import pickle
 
+import faiss
 import numpy as np
 import scipy.spatial.distance
 
@@ -132,6 +133,10 @@ class OnnxDetector(IdentificationApi):
             self.y_unknown = class_name_to_label["unknown"]
             self.y = np.array(self.y)
             self.X = np.array(self.X)
+
+            faiss.normalize_L2(self.X)
+            self.index = faiss.IndexFlatIP(self.X.shape[1])
+            self.index.add(self.X)
         except Exception as e:
             logger.exception(e)
             raise RuntimeError("failed to create ONNX Runtime Session") from e
@@ -166,13 +171,10 @@ class OnnxDetector(IdentificationApi):
         outputs = self._do_inference(tensor_input)
         assert len(outputs) == 1  # Single output tensor
         assert len(outputs[0]) == 1  # Batch Size == 1
-        embedding = outputs[0][0]
+        embedding = outputs[0]
 
-        distances_cosine = scipy.spatial.distance.cdist(
-            embedding[None, ...], self.X, metric="cosine"
-        )[0]
-        distances = distances_cosine
-        idx = np.where(distances < self.threshold_reid_neighbours)[0]
+        faiss.normalize_L2(embedding)
+        idx = self.index.range_search(embedding, 1 - self.threshold_reid_neighbours)[2]
 
         labels = self.y[idx]
 
