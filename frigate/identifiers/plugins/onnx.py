@@ -169,9 +169,9 @@ class OnnxDetector(IdentificationApi):
         ]
 
         outputs = self._do_inference(tensor_input)
-        assert len(outputs) == 1  # Single output tensor
+        # assert len(outputs) == 1  # Single output tensor
         assert len(outputs[0]) == 1  # Batch Size == 1
-        embedding = outputs[0]
+        embedding = np.concatenate([output[0] for output in outputs])[None, ...]
 
         faiss.normalize_L2(embedding)
         idx = self.index.range_search(embedding, 1 - self.threshold_reid_neighbours)[2]
