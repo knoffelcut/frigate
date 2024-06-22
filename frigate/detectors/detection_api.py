@@ -87,7 +87,7 @@ class DetectionApi(ABC):
             # add scores to the last column
             dets = np.concatenate((output_data, scores), axis=1)
             # filter out lines with scores below threshold
-            dets = dets[dets[:, -1] > self.min_score, :]
+            dets = dets[dets[:, -1] >= self.min_score, :]
             # limit to top 20 scores, descending order
             ordered = dets[dets[:, -1].argsort()[::-1][:20]]
             detections = np.zeros((20, 6), np.float32)
@@ -101,7 +101,7 @@ class DetectionApi(ABC):
             return detections
         elif self.model_type == ModelTypeEnum.yolov10:
             # filter out lines with scores below threshold
-            dets = results[results[:, 4] > self.min_score, :]
+            dets = results[results[:, 4] >= self.min_score, :]
             # limit to top 20 scores, descending order
             ordered = dets[dets[:, 4].argsort()[::-1][:20]]
             detections = np.zeros((20, 6), np.float32)

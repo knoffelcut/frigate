@@ -158,7 +158,7 @@ class Rknn(DetectionApi):
         )  # array shape (2100,); max confidence of each row
 
         # remove lines with score scores < self.min_score
-        filtered_arg = np.argwhere(scores > self.min_score)
+        filtered_arg = np.argwhere(scores >= self.min_score)
         results = results[filtered_arg[:, 0]]
         scores = scores[filtered_arg[:, 0]]
 
