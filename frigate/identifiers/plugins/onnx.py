@@ -185,6 +185,9 @@ class OnnxDetector(IdentificationApi):
             mode = scipy.stats.mode(labels, keepdims=False)
             label = mode[0]
             confidence = mode[1] / len(labels)
+        if confidence < 0.5:
+            confidence = 1.0 - confidence
+            label = self.y_unknown
 
         results = np.zeros((20, 6), dtype=np.float32)
         results[0, 0] = label
