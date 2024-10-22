@@ -11,19 +11,16 @@ services:
     shm_size: "256mb"
     build:
       context: .
-      dockerfile: docker/main/Dockerfile
+      dockerfile: docker/onnx/Dockerfile.nvidia
       # Use target devcontainer-trt for TensorRT dev
-      target: devcontainer
-    ## Uncomment this block for nvidia gpu support
-    # deploy:
-    #       resources:
-    #           reservations:
-    #               devices:
-    #                   - driver: nvidia
-    #                     count: 1
-    #                     capabilities: [gpu]
-    environment:
-      YOLO_MODELS: yolov7-320
+      target: frigate-devcontainer-onnx-nvidia
+    deploy:
+          resources:
+              reservations:
+                  devices:
+                      - driver: nvidia
+                        count: 1
+                        capabilities: [gpu]
     devices:
       - /dev/bus/usb:/dev/bus/usb
       # - /dev/dri:/dev/dri # for intel hwaccel, needs to be updated for your hardware

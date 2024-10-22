@@ -32,6 +32,12 @@ build: version amd64 arm64
 build-arm64-onnx: version
 	ARCH=arm64 IMAGE_REPO=${IMAGE_REPO} VERSION=$(VERSION) COMMIT_HASH=${COMMIT_HASH} docker buildx bake --file=docker/onnx/onnx.hcl --progress=plain onnx
 
+build-amd64-onnx: version
+	ARCH=amd64 IMAGE_REPO=${IMAGE_REPO} VERSION=$(VERSION) COMMIT_HASH=${COMMIT_HASH} docker buildx bake --file=docker/onnx/onnx.hcl --progress=plain onnx-nvidia
+
+build-amd64-onnx-dev: version
+	ARCH=amd64 IMAGE_REPO=${IMAGE_REPO} VERSION=$(VERSION) COMMIT_HASH=${COMMIT_HASH} docker buildx bake --file=docker/onnx/onnx.hcl --progress=plain devcontainer-onnx-nvidia
+
 push: push-boards
 	docker buildx build --push --platform linux/arm64/v8,linux/amd64 --target=frigate --tag $(IMAGE_REPO):${GITHUB_REF_NAME}-$(COMMIT_HASH) --file docker/main/Dockerfile .
 
