@@ -46,7 +46,6 @@ from frigate.util.object import (
     get_cluster_candidates,
     get_cluster_region,
     get_cluster_region_from_grid,
-    get_min_region_size,
     get_startup_regions,
     inside_any,
     intersects_any,
@@ -704,11 +703,12 @@ def detect(
     region_detections = object_detector.detect(tensor_input, min_score)
     for d in region_detections:
         box = d[2]
-        size = region[2] - region[0]
-        x_min = int(max(0, (box[1] * size) + region[0]))
-        y_min = int(max(0, (box[0] * size) + region[1]))
-        x_max = int(min(detect_config.width - 1, (box[3] * size) + region[0]))
-        y_max = int(min(detect_config.height - 1, (box[2] * size) + region[1]))
+        size_width = region[2] - region[0]
+        size_height = region[3] - region[1]
+        x_min = int(max(0, (box[1] * size_width) + region[0]))
+        y_min = int(max(0, (box[0] * size_height) + region[1]))
+        x_max = int(min(detect_config.width - 1, (box[3] * size_width) + region[0]))
+        y_max = int(min(detect_config.height - 1, (box[2] * size_height) + region[1]))
 
         # ignore objects that were detected outside the frame
         if (x_min >= detect_config.width - 1) or (y_min >= detect_config.height - 1):
@@ -762,7 +762,7 @@ def process_frames(
     stationary_frame_counter = 0
     camera_enabled = True
 
-    region_min_size = get_min_region_size(model_config)
+    model_height, model_width = model_config.height, model_config.width
 
     min_score = min(
         object_filter.min_score
@@ -908,10 +908,13 @@ def process_frames(
             # get consolidated regions for tracked objects
             regions = [
                 get_cluster_region(
-                    frame_shape, region_min_size, candidate, object_boxes
+                    frame_shape, model_height, model_width, candidate, object_boxes
                 )
                 for candidate in get_cluster_candidates(
-                    frame_shape, region_min_size, object_boxes
+                    frame_shape,
+                    model_height,
+                    model_width,
+                    object_boxes,
                 )
             ]
 
@@ -930,13 +933,15 @@ def process_frames(
                 if standalone_motion_boxes:
                     motion_clusters = get_cluster_candidates(
                         frame_shape,
-                        region_min_size,
+                        model_height,
+                        model_width,
                         standalone_motion_boxes,
                     )
                     motion_regions = [
                         get_cluster_region_from_grid(
                             frame_shape,
-                            region_min_size,
+                            model_height,
+                            model_width,
                             candidate,
                             standalone_motion_boxes,
                             region_grid,
@@ -959,7 +964,8 @@ def process_frames(
                         region[1],
                         region[2],
                         region[3],
-                        region_min_size,
+                        model_height,
+                        model_width,
                         1,
                     ),
                 ]
@@ -967,7 +973,7 @@ def process_frames(
             # if starting up, get the next startup scan region
             if startup_scan:
                 for region in get_startup_regions(
-                    frame_shape, region_min_size, region_grid
+                    frame_shape, model_height, model_width, region_grid
                 ):
                     regions.append(region)
                 startup_scan = False
