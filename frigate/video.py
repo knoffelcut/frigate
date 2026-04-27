@@ -38,6 +38,7 @@ from frigate.util.builtin import EventsPerSecond
 from frigate.util.image import (
     FrameManager,
     SharedMemoryFrameManager,
+    calculate_region,
     draw_box_with_label,
 )
 from frigate.util.object import (
@@ -935,6 +936,25 @@ def process_frames(
                         for candidate in motion_clusters
                     ]
                     regions += motion_regions
+
+            if model_config.consolidate_regions and len(regions) > 1:
+                region = (
+                    min(region[0] for region in regions),
+                    min(region[1] for region in regions),
+                    max(region[2] for region in regions),
+                    max(region[3] for region in regions),
+                )
+                regions = [
+                    calculate_region(
+                        frame_shape,
+                        region[0],
+                        region[1],
+                        region[2],
+                        region[3],
+                        region_min_size,
+                        1,
+                    ),
+                ]
 
             # if starting up, get the next startup scan region
             if startup_scan:
