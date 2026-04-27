@@ -696,9 +696,12 @@ def detect(
     object_filters,
 ):
     tensor_input = create_tensor_input(frame, model_config, region)
+    min_score = min(
+        object_filter.min_score for object_filter in object_filters.values()
+    )
 
     detections = []
-    region_detections = object_detector.detect(tensor_input)
+    region_detections = object_detector.detect(tensor_input, min_score)
     for d in region_detections:
         box = d[2]
         size = region[2] - region[0]
@@ -760,6 +763,11 @@ def process_frames(
     camera_enabled = True
 
     region_min_size = get_min_region_size(model_config)
+
+    min_score = min(
+        object_filter.min_score
+        for object_filter in camera_config.objects.filters.values()
+    )
 
     attributes_map = model_config.attributes_map
     all_attributes = model_config.all_attributes
@@ -992,7 +1000,9 @@ def process_frames(
                     )
                 )
 
-            consolidated_detections = reduce_detections(frame_shape, detections)
+            consolidated_detections = reduce_detections(
+                frame_shape, detections, min_score
+            )
 
             # if detection was run on this frame, consolidate
             if len(regions) > 0:

@@ -495,6 +495,7 @@ def get_startup_regions(
 def reduce_detections(
     frame_shape: tuple[int, int],
     all_detections: list[tuple[Any]],
+    min_score: float = 0.5,
 ) -> list[tuple[Any]]:
     """Take a list of detections and reduce overlaps to create a list of confident detections."""
 
@@ -520,12 +521,17 @@ def reduce_detections(
             ]
 
             # reduce confidences for objects that are on edge of region
-            # 0.6 should be used to ensure that the object is still considered and not dropped
+            # (min_score + eps) should be used to ensure that the object is still considered and not dropped
             # due to min score requirement of NMSBoxes
-            confidences = [0.6 if clipped(o, frame_shape) else o[1] for o in group]
+            confidences = [
+                (min_score + 1e-4) if clipped(o, frame_shape) else o[1] for o in group
+            ]
 
             indices = cv2.dnn.NMSBoxes(
-                boxes, confidences, 0.5, LABEL_NMS_MAP.get(label, LABEL_NMS_DEFAULT)
+                boxes,
+                confidences,
+                min_score,
+                LABEL_NMS_MAP.get(label, LABEL_NMS_DEFAULT),
             )
 
             # add objects
