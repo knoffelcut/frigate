@@ -27,6 +27,7 @@ class CpuTfl(DetectionApi):
     type_key = DETECTOR_KEY
 
     def __init__(self, detector_config: CpuDetectorConfig):
+        super().__init__(detector_config)
         self.interpreter = Interpreter(
             model_path=detector_config.model.path,
             num_threads=detector_config.num_threads or 3,
@@ -51,7 +52,7 @@ class CpuTfl(DetectionApi):
         detections = np.zeros((20, 6), np.float32)
 
         for i in range(count):
-            if scores[i] < 0.4 or i == 20:
+            if scores[i] < self.min_score or i == 20:
                 break
             detections[i] = [
                 class_ids[i],

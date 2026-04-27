@@ -31,6 +31,9 @@ from frigate.ffmpeg_presets import (
     parse_preset_input,
     parse_preset_output_record,
 )
+from frigate.identifiers import IdentifierConfig
+from frigate.identifiers.identifier_config import BaseIdentifierConfig
+from frigate.identifiers.identifier_config import ModelConfig as ModelIdentifierConfig
 from frigate.plus import PlusApi
 from frigate.util.builtin import (
     deep_merge,
@@ -60,6 +63,7 @@ if os.path.isdir("/run/secrets"):
 DEFAULT_TRACKED_OBJECTS = ["person"]
 DEFAULT_LISTEN_AUDIO = ["bark", "fire_alarm", "scream", "speech", "yell"]
 DEFAULT_DETECTORS = {"cpu": {"type": "cpu"}}
+DEFAULT_IDENTIFIERS = {}
 DEFAULT_DETECT_DIMENSIONS = {"width": 1280, "height": 720}
 DEFAULT_TIME_LAPSE_FFMPEG_ARGS = "-vf setpts=0.04*PTS -r 30"
 
@@ -1055,6 +1059,15 @@ class FrigateConfig(FrigateBaseModel):
         default=DEFAULT_DETECTORS,
         title="Detector hardware configuration.",
     )
+    model_identification: ModelIdentifierConfig = Field(
+        default=None,
+        # default_factory=ModelIdentifierConfig,
+        title="Identification model configuration.",
+    )
+    identifiers: Dict[str, BaseIdentifierConfig] = Field(
+        default=DEFAULT_IDENTIFIERS,
+        title="Identifier hardware configuration.",
+    )
     logger: LoggerConfig = Field(
         default_factory=LoggerConfig, title="Logging configuration."
     )
@@ -1294,6 +1307,16 @@ class FrigateConfig(FrigateBaseModel):
                 config.model.dict(exclude_unset=True),
             )
 
+            min_score = merged_model.get("min_score", config.model.min_score)
+            class_names = set(
+                class_name for class_name in config.model.merged_labelmap.values()
+            )
+            for config_camera in config.cameras.values():
+                for object_name, object_filter in config_camera.objects.filters.items():
+                    if object_name in class_names:
+                        min_score = min(min_score, object_filter.min_score)
+            merged_model["min_score"] = min_score
+
             if "path" not in merged_model:
                 if detector_config.type == "cpu":
                     merged_model["path"] = "/cpu_model.tflite"
@@ -1306,6 +1329,55 @@ class FrigateConfig(FrigateBaseModel):
             )
             detector_config.model.compute_model_hash()
             config.detectors[key] = detector_config
+
+        for key, identifier in config.identifiers.items():
+            identifier_config: IdentifierConfig = parse_obj_as(
+                IdentifierConfig, identifier
+            )
+            if identifier_config.model is None:
+                identifier_config.model = config.model_identification
+            else:
+                model = identifier_config.model
+                schema = ModelIdentifierConfig.schema()["properties"]
+                if (
+                    model.width != schema["width"]["default"]
+                    or model.height != schema["height"]["default"]
+                    or model.labelmap_path is not None
+                    or model.labelmap is not {}
+                    or model.input_tensor != schema["input_tensor"]["default"]
+                    or model.input_pixel_format
+                    != schema["input_pixel_format"]["default"]
+                ):
+                    logger.warning(
+                        "Customizing more than a identifier model path is unsupported."
+                    )
+            merged_model = deep_merge(
+                identifier_config.model.dict(exclude_unset=True),
+                config.model_identification.dict(exclude_unset=True),
+            )
+
+            # TODO Need to check this - implemented without checking in debug mode
+            min_score = merged_model.get("min_score", config.model.min_score)
+            class_names = set(
+                class_name
+                for class_name in config.model_identification.merged_labelmap.values()
+            )
+            for config_camera in config.cameras.values():
+                for object_name, object_filter in config_camera.objects.filters.items():
+                    if object_name in class_names:
+                        min_score = min(min_score, object_filter.min_score)
+            merged_model["min_score"] = min_score
+
+            assert (
+                "path" in merged_model
+            )  # TODO Can likely check this as part of config
+
+            identifier_config.model = ModelIdentifierConfig.parse_obj(merged_model)
+            identifier_config.model.check_and_load_plus_model(
+                plus_api, identifier_config.type
+            )
+            identifier_config.model.compute_model_hash()
+            config.identifiers[key] = identifier_config
 
         return config
 

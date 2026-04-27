@@ -196,6 +196,7 @@ class TensorRtDetector(DetectionApi):
         ]
 
     def __init__(self, detector_config: TensorRTDetectorConfig):
+        super().__init__(detector_config)
         assert (
             TRT_SUPPORT
         ), f"TensorRT libraries not found, {DETECTOR_KEY} detector not present"
@@ -213,7 +214,6 @@ class TensorRtDetector(DetectionApi):
             cuda.CUctx_flags.CU_CTX_MAP_HOST, detector_config.device
         )
 
-        self.conf_th = 0.4  ##TODO: model config parameter
         self.nms_threshold = 0.4
         err, self.stream = cuda.cuStreamCreate(0)
         self.trt_logger = TrtLogger()
@@ -285,7 +285,7 @@ class TensorRtDetector(DetectionApi):
         )
         trt_outputs = self._do_inference()
 
-        raw_detections = self._postprocess_yolo(trt_outputs, self.conf_th)
+        raw_detections = self._postprocess_yolo(trt_outputs)
 
         if len(raw_detections) == 0:
             return np.zeros((20, 6), np.float32)

@@ -9,9 +9,15 @@ import threading
 import time
 
 import cv2
+import numpy as np
 from setproctitle import setproctitle
 
-from frigate.config import CameraConfig, DetectConfig, ModelConfig
+from frigate.config import (
+    CameraConfig,
+    DetectConfig,
+    ModelConfig,
+    ModelIdentifierConfig,
+)
 from frigate.const import (
     ALL_ATTRIBUTE_LABELS,
     ATTRIBUTE_LABEL_MAP,
@@ -35,11 +41,11 @@ from frigate.util.image import (
 )
 from frigate.util.object import (
     box_inside,
+    calculate_region,
     create_tensor_input,
     get_cluster_candidates,
     get_cluster_region,
     get_cluster_region_from_grid,
-    get_min_region_size,
     get_startup_regions,
     inside_any,
     intersects_any,
@@ -387,6 +393,9 @@ def track_camera(
     labelmap,
     detection_queue,
     result_connection,
+    model_identification_config,
+    identification_queue,
+    result_connection_identification,
     detected_objects_queue,
     inter_process_queue,
     process_info,
@@ -428,6 +437,17 @@ def track_camera(
     object_detector = RemoteObjectDetector(
         name, labelmap, detection_queue, result_connection, model_config, stop_event
     )
+    if model_identification_config is not None:
+        object_identifier = RemoteObjectDetector(
+            f"{name}_identifier",
+            model_identification_config.merged_labelmap,
+            identification_queue,
+            result_connection_identification,
+            model_identification_config,
+            stop_event,
+        )
+    else:
+        object_identifier = None
 
     object_tracker = NorfairTracker(config, ptz_metrics)
 
@@ -440,10 +460,12 @@ def track_camera(
         region_grid_queue,
         frame_shape,
         model_config,
+        model_identification_config,
         config.detect,
         frame_manager,
         motion_detector,
         object_detector,
+        object_identifier,
         object_tracker,
         detected_objects_queue,
         process_info,
@@ -474,11 +496,12 @@ def detect(
     region_detections = object_detector.detect(tensor_input)
     for d in region_detections:
         box = d[2]
-        size = region[2] - region[0]
-        x_min = int(max(0, (box[1] * size) + region[0]))
-        y_min = int(max(0, (box[0] * size) + region[1]))
-        x_max = int(min(detect_config.width - 1, (box[3] * size) + region[0]))
-        y_max = int(min(detect_config.height - 1, (box[2] * size) + region[1]))
+        size_width = region[2] - region[0]
+        size_height = region[3] - region[1]
+        x_min = int(max(0, (box[1] * size_width) + region[0]))
+        y_min = int(max(0, (box[0] * size_height) + region[1]))
+        x_max = int(min(detect_config.width - 1, (box[3] * size_width) + region[0]))
+        y_max = int(min(detect_config.height - 1, (box[2] * size_height) + region[1]))
 
         # ignore objects that were detected outside the frame
         if (x_min >= detect_config.width - 1) or (y_min >= detect_config.height - 1):
@@ -503,6 +526,50 @@ def detect(
     return detections
 
 
+def identify(
+    object_identifier,
+    frame,
+    model_config,
+    detections: list[tuple[any]],
+    objects_to_track,
+    object_filters,
+):
+    detections_ = []
+    for i, det in enumerate(detections):
+        # TODO Should do something similar to the regions selection and resizing here (that I implemented) to support non-square aspect ratios
+        # TODO Can do something similar to image.calculate_region(.., multiplier=1, ..), without the outside the image constraint
+        assert model_config.height_resize == model_config.width_resize
+        assert model_config.height == model_config.width
+        x_min, y_min, x_max, y_max = det[2]
+        width = x_max - x_min
+        height = y_max - y_min
+        size = max(width, height)
+        size = (size / model_config.width_resize) * model_config.width
+        size = int(np.ceil(size / 4) * 4)
+        x_center = x_min + width // 2
+        y_center = y_min + height // 2
+        x_min = x_center - size // 2
+        x_max = x_center + size // 2
+        y_min = y_center - size // 2
+        y_max = y_center + size // 2
+
+        region = x_min, y_min, x_max, y_max
+        # TODO When adding borders here, should add 127 to the sides
+        tensor_input = create_tensor_input(frame, model_config, region)
+
+        detections_identified = object_identifier.detect(tensor_input)
+        if len(detections_identified) < 1:
+            continue
+        detection_identified = detections_identified[0][:2] + det[2:]
+
+        # apply object filters
+        if is_object_filtered(detection_identified, objects_to_track, object_filters):
+            continue
+        detections_.append(detection_identified)
+
+    return detections_
+
+
 def process_frames(
     camera_name: str,
     inter_process_queue: mp.Queue,
@@ -510,10 +577,12 @@ def process_frames(
     region_grid_queue: mp.Queue,
     frame_shape,
     model_config: ModelConfig,
+    model_identification_config: ModelIdentifierConfig,
     detect_config: DetectConfig,
     frame_manager: FrameManager,
     motion_detector: MotionDetector,
     object_detector: RemoteObjectDetector,
+    object_identifier: RemoteObjectDetector,
     object_tracker: ObjectTracker,
     detected_objects_queue: mp.Queue,
     process_info: dict,
@@ -537,7 +606,11 @@ def process_frames(
     startup_scan = True
     stationary_frame_counter = 0
 
-    region_min_size = get_min_region_size(model_config)
+    model_height, model_width = model_config.height, model_config.width
+
+    min_score = min(
+        object_filter.min_score for object_filter in object_filters.values()
+    )
 
     while not stop_event.is_set():
         if (
@@ -624,10 +697,10 @@ def process_frames(
             # get consolidated regions for tracked objects
             regions = [
                 get_cluster_region(
-                    frame_shape, region_min_size, candidate, object_boxes
+                    frame_shape, model_height, model_width, candidate, object_boxes
                 )
                 for candidate in get_cluster_candidates(
-                    frame_shape, region_min_size, object_boxes
+                    frame_shape, model_height, model_width, object_boxes
                 )
             ]
 
@@ -646,13 +719,15 @@ def process_frames(
                 if standalone_motion_boxes:
                     motion_clusters = get_cluster_candidates(
                         frame_shape,
-                        region_min_size,
+                        model_height,
+                        model_width,
                         standalone_motion_boxes,
                     )
                     motion_regions = [
                         get_cluster_region_from_grid(
                             frame_shape,
-                            region_min_size,
+                            model_height,
+                            model_width,
                             candidate,
                             standalone_motion_boxes,
                             region_grid,
@@ -664,7 +739,7 @@ def process_frames(
             # if starting up, get the next startup scan region
             if startup_scan:
                 for region in get_startup_regions(
-                    frame_shape, region_min_size, region_grid
+                    frame_shape, model_height, model_width, region_grid
                 ):
                     regions.append(region)
                 startup_scan = False
@@ -684,6 +759,26 @@ def process_frames(
                 if obj["id"] in stationary_object_ids
             ]
 
+            if model_config.consolidate_regions and len(regions) > 1:
+                region = (
+                    min(region[0] for region in regions),
+                    min(region[1] for region in regions),
+                    max(region[2] for region in regions),
+                    max(region[3] for region in regions),
+                )
+                regions = [
+                    calculate_region(
+                        frame_shape,
+                        region[0],
+                        region[1],
+                        region[2],
+                        region[3],
+                        model_height,
+                        model_width,
+                        1,
+                    ),
+                ]
+
             for region in regions:
                 detections.extend(
                     detect(
@@ -697,7 +792,19 @@ def process_frames(
                     )
                 )
 
-            consolidated_detections = reduce_detections(frame_shape, detections)
+            consolidated_detections = reduce_detections(
+                frame_shape, detections, min_score
+            )
+
+            if consolidated_detections and object_identifier:
+                consolidated_detections = identify(
+                    object_identifier,
+                    frame,
+                    model_identification_config,
+                    consolidated_detections,
+                    objects_to_track,
+                    object_filters,
+                )
 
             # if detection was run on this frame, consolidate
             if len(regions) > 0:
