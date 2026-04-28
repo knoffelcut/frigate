@@ -92,6 +92,10 @@ class FrigateApp:
         self.detection_queue: Queue = mp.Queue()
         self.detectors: dict[str, ObjectDetectProcess] = {}
         self.detection_shms: list[mp.shared_memory.SharedMemory] = []
+        self.identification_queue: Queue = mp.Queue()
+        self.identifiers: dict[str, ObjectDetectProcess] = {}
+        self.identification_out_events: dict[str, MpEvent] = {}
+        self.identification_shms: list[mp.shared_memory.SharedMemory] = []
         self.log_queue: Queue = mp.Queue()
         self.camera_metrics: DictProxy = self.metrics_manager.dict()
         self.embeddings_metrics: DataProcessorMetrics | None = (
@@ -380,6 +384,52 @@ class FrigateApp:
                 self.stop_event,
             )
 
+    def start_identifiers(self) -> None:
+        # TODO Duplicate of `start_detectors`, with some variable name changes
+        if not self.config.identifiers:
+            return
+
+        for name in self.config.cameras.keys():
+            name = f"{name}_identifier"
+            self.identification_out_events[name] = mp.Event()
+
+            try:
+                largest_frame = max(
+                    [
+                        identifier.model.height * identifier.model.width * 3
+                        if identifier.model is not None
+                        else 320
+                        for identifier in self.config.identifiers.values()
+                    ]
+                )
+                shm_in = UntrackedSharedMemory(
+                    name=name,
+                    create=True,
+                    size=largest_frame,
+                )
+            except FileExistsError:
+                shm_in = UntrackedSharedMemory(name=name)
+
+            try:
+                shm_out = UntrackedSharedMemory(
+                    name=f"out-{name}", create=True, size=20 * 6 * 4
+                )
+            except FileExistsError:
+                shm_out = UntrackedSharedMemory(name=f"out-{name}")
+
+            self.identification_shms.append(shm_in)
+            self.identification_shms.append(shm_out)
+
+        for name, identification_config in self.config.identifiers.items():
+            self.identifiers[name] = ObjectDetectProcess(
+                name,
+                self.identification_queue,
+                list(self.config.cameras.keys()),
+                self.config,
+                identification_config,
+                self.stop_event,
+            )
+
     def start_ptz_autotracker(self) -> None:
         self.ptz_autotracker_thread = PtzAutoTrackerThread(
             self.config,
@@ -410,6 +460,7 @@ class FrigateApp:
         self.camera_maintainer = CameraMaintainer(
             self.config,
             self.detection_queue,
+            self.identification_queue,
             self.detected_frames_queue,
             self.camera_metrics,
             self.ptz_metrics,
@@ -543,6 +594,7 @@ class FrigateApp:
         self.check_db_data_migrations()
         self.init_inter_process_communicator()
         self.start_detectors()
+        self.start_identifiers()
         self.init_dispatcher()
         self.init_embeddings_client()
         self.start_video_output_processor()

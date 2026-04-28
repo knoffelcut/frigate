@@ -1,4 +1,5 @@
 from frigate.detectors import DetectorConfig, ModelConfig  # noqa: F401
+from frigate.identifiers import ModelConfig as ModelIdentifierConfig  # noqa: F401
 
 from .auth import *  # noqa: F403
 from .camera import *  # noqa: F403

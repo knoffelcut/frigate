@@ -9,6 +9,7 @@ from multiprocessing.synchronize import Event as MpEvent
 from typing import Any
 
 import cv2
+import numpy as np
 
 from frigate.camera import CameraMetrics, PTZMetrics
 from frigate.comms.inter_process import InterProcessRequestor
@@ -16,7 +17,13 @@ from frigate.comms.recordings_updater import (
     RecordingsDataSubscriber,
     RecordingsDataTypeEnum,
 )
-from frigate.config import CameraConfig, DetectConfig, LoggerConfig, ModelConfig
+from frigate.config import (
+    CameraConfig,
+    DetectConfig,
+    LoggerConfig,
+    ModelConfig,
+    ModelIdentifierConfig,
+)
 from frigate.config.camera.camera import CameraTypeEnum
 from frigate.config.camera.updater import (
     CameraConfigUpdateEnum,
@@ -610,6 +617,8 @@ class CameraTracker(FrigateProcess):
         labelmap: dict[int, str],
         detection_queue: Queue,
         detected_objects_queue,
+        model_identification_config,
+        identification_queue,
         camera_metrics: CameraMetrics,
         ptz_metrics: PTZMetrics,
         region_grid: list[list[dict[str, Any]]],
@@ -627,6 +636,8 @@ class CameraTracker(FrigateProcess):
         self.labelmap = labelmap
         self.detection_queue = detection_queue
         self.detected_objects_queue = detected_objects_queue
+        self.model_identification_config = model_identification_config
+        self.identification_queue = identification_queue
         self.camera_metrics = camera_metrics
         self.ptz_metrics = ptz_metrics
         self.region_grid = region_grid
@@ -651,6 +662,16 @@ class CameraTracker(FrigateProcess):
             self.model_config,
             self.stop_event,
         )
+        if self.model_identification_config is not None:
+            object_identifier = RemoteObjectDetector(
+                f"{self.config.name}_identifier",
+                self.model_identification_config.merged_labelmap,
+                self.identification_queue,
+                self.model_identification_config,
+                self.stop_event,
+            )
+        else:
+            object_identifier = None
 
         object_tracker = NorfairTracker(self.config, self.ptz_metrics)
 
@@ -664,10 +685,12 @@ class CameraTracker(FrigateProcess):
             frame_queue,
             frame_shape,
             self.model_config,
+            self.model_identification_config,
             self.config,
             frame_manager,
             motion_detector,
             object_detector,
+            object_identifier,
             object_tracker,
             self.detected_objects_queue,
             self.camera_metrics,
@@ -726,15 +749,61 @@ def detect(
     return detections
 
 
+def identify(
+    object_identifier,
+    frame,
+    model_config,
+    detections: list[tuple[any]],
+    objects_to_track,
+    object_filters,
+):
+    detections_ = []
+    for i, det in enumerate(detections):
+        # TODO Should do something similar to the regions selection and resizing here (that I implemented) to support non-square aspect ratios
+        # TODO Can do something similar to image.calculate_region(.., multiplier=1, ..), without the outside the image constraint
+        assert model_config.height_resize == model_config.width_resize
+        assert model_config.height == model_config.width
+        x_min, y_min, x_max, y_max = det[2]
+        width = x_max - x_min
+        height = y_max - y_min
+        size = max(width, height)
+        size = (size / model_config.width_resize) * model_config.width
+        size = int(np.ceil(size / 4) * 4)
+        x_center = x_min + width // 2
+        y_center = y_min + height // 2
+        x_min = x_center - size // 2
+        x_max = x_center + size // 2
+        y_min = y_center - size // 2
+        y_max = y_center + size // 2
+
+        region = x_min, y_min, x_max, y_max
+        # TODO When adding borders here, should add 127 to the sides
+        tensor_input = create_tensor_input(frame, model_config, region)
+
+        detections_identified = object_identifier.detect(tensor_input)
+        if len(detections_identified) < 1:
+            continue
+        detection_identified = detections_identified[0][:2] + det[2:]
+
+        # apply object filters
+        if is_object_filtered(detection_identified, objects_to_track, object_filters):
+            continue
+        detections_.append(detection_identified)
+
+    return detections_
+
+
 def process_frames(
     requestor: InterProcessRequestor,
     frame_queue: Queue,
     frame_shape: tuple[int, int],
     model_config: ModelConfig,
+    model_identification_config: ModelIdentifierConfig,
     camera_config: CameraConfig,
     frame_manager: FrameManager,
     motion_detector: MotionDetector,
     object_detector: RemoteObjectDetector,
+    object_identifier: RemoteObjectDetector,
     object_tracker: ObjectTracker,
     detected_objects_queue: Queue,
     camera_metrics: CameraMetrics,
@@ -1009,6 +1078,16 @@ def process_frames(
             consolidated_detections = reduce_detections(
                 frame_shape, detections, min_score
             )
+
+            if consolidated_detections and object_identifier:
+                consolidated_detections = identify(
+                    object_identifier,
+                    frame,
+                    model_identification_config,
+                    consolidated_detections,
+                    camera_config.objects.track,
+                    camera_config.objects.filters,
+                )
 
             # if detection was run on this frame, consolidate
             if len(regions) > 0:

@@ -22,6 +22,9 @@ from typing_extensions import Self
 from frigate.const import REGEX_JSON
 from frigate.detectors import DetectorConfig, ModelConfig
 from frigate.detectors.detector_config import BaseDetectorConfig
+from frigate.identifiers import IdentifierConfig
+from frigate.identifiers.identifier_config import BaseIdentifierConfig
+from frigate.identifiers.identifier_config import ModelConfig as ModelIdentifierConfig
 from frigate.plus import PlusApi
 from frigate.util.builtin import (
     deep_merge,
@@ -87,6 +90,7 @@ version: {CURRENT_CONFIG_VERSION}
 
 DEFAULT_DETECTORS = {"cpu": {"type": "cpu"}}
 DEFAULT_DETECT_DIMENSIONS = {"width": 1280, "height": 720}
+DEFAULT_IDENTIFIERS = {}
 
 # stream info handler
 stream_info_retriever = StreamInfoRetriever()
@@ -347,6 +351,17 @@ class FrigateConfig(FrigateBaseModel):
         default_factory=ModelConfig, title="Detection model configuration."
     )
 
+    # Identifier config
+    identifiers: Dict[str, BaseIdentifierConfig] = Field(
+        default=DEFAULT_IDENTIFIERS,
+        title="Identifier hardware configuration.",
+    )
+    model_identification: ModelIdentifierConfig = Field(
+        default=None,
+        # default_factory=ModelIdentifierConfig,
+        title="Identification model configuration.",
+    )
+
     # GenAI config
     genai: GenAIConfig = Field(
         default_factory=GenAIConfig, title="Generative AI configuration."
@@ -496,6 +511,43 @@ class FrigateConfig(FrigateBaseModel):
             labelmap_objects = model.merged_labelmap.values()
             detector_config.model = model
             self.detectors[key] = detector_config
+
+        for key, identifier in self.identifiers.items():
+            adapter = TypeAdapter(IdentifierConfig)
+            model_dict = (
+                identifier
+                if isinstance(identifier, dict)
+                else identifier.model_dump(warnings="none")
+            )
+            identifier_config: BaseIdentifierConfig = adapter.validate_python(
+                model_dict
+            )
+
+            # users should not set model themselves
+            if identifier_config.model:
+                identifier_config.model = None
+
+            model_config = self.model_identification.model_dump(
+                exclude_unset=True, warnings="none"
+            )
+
+            if identifier_config.model_path:
+                model_config["path"] = identifier_config.model_path
+
+            assert "path" in model_config, "Model path must be set for identifiers."
+            assert "database_path" in model_config, (
+                "Database path must be set for identifiers."
+            )
+            assert "labelmap_path" in model_config, (
+                "Labelmap path must be set for identifiers."
+            )
+
+            model = ModelIdentifierConfig.model_validate(model_config)
+            model.check_and_load_plus_model(self.plus_api, identifier_config.type)
+            model.compute_model_hash()
+            labelmap_objects = model.merged_labelmap.values()
+            identifier_config.model = model
+            self.identifiers[key] = identifier_config
 
         for name, camera in self.cameras.items():
             modified_global_config = global_config.copy()
