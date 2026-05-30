@@ -10,6 +10,7 @@ from frigate.detectors.detection_runners import OpenVINOModelRunner
 from frigate.detectors.detector_config import BaseDetectorConfig, ModelTypeEnum
 from frigate.util.model import (
     post_process_dfine,
+    post_process_nanodet_plus,
     post_process_rfdetr,
     post_process_yolo,
 )
@@ -33,6 +34,7 @@ class OvDetector(DetectionApi):
         ModelTypeEnum.yolonas,
         ModelTypeEnum.yologeneric,
         ModelTypeEnum.yolox,
+        ModelTypeEnum.nanodet_plus,
     ]
 
     def __init__(self, detector_config: OvDetectorConfig):
@@ -222,3 +224,9 @@ class OvDetector(DetectionApi):
                     object_detected[6], object_detected[5], object_detected[:4]
                 )
             return detections
+        elif self.ov_model_type == ModelTypeEnum.nanodet_plus:
+            return post_process_nanodet_plus(
+                outputs[0],
+                self.width,
+                self.height,
+            )
