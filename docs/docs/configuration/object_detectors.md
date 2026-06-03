@@ -331,6 +331,7 @@ detectors:
 | [MobileNet v2](#ssdlite-mobilenet-v2) | ✅  | ✅  | Fast and lightweight model, less accurate than larger models |
 | [YOLOX](#yolox)                       | ✅  | ?   |                                                              |
 | [D-FINE / DEIMv2](#d-fine--deimv2)    | ❌  | ❌  |                                                              |
+| [NanoDet-Plus](#nanodet-plus)          | ?   | ?   |                                                             |
 
 #### SSDLite MobileNet v2
 
@@ -523,6 +524,46 @@ model:
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
 
 </details>
+
+
+#### NanoDet-Plus
+[NanoDet-Plus](https://github.com/RangiLyu/nanodet) is a lightweight object detection model that achieves
+good accuracy on CPUs given its small footprint.
+
+Script to export an ONNX model for use in Frigate is provided in [the models section](#downloading-nanodet-plus-models).
+
+:::warning
+
+NanoDet-Plus has not been tested in GPU nor NPU modes.
+
+:::
+
+<details>
+  <summary>NanoDet-Plus Setup & Config</summary>
+
+After placing the exported onnx model in your config/model_cache folder, you can use the following configuration:
+
+```yaml
+detectors:
+  ov:
+    type: openvino
+    device: CPU
+
+model:
+  model_type: nanodet_plus
+  width: 320
+  height: 320
+  input_tensor: nchw
+  input_dtype: float
+  input_pixel_format: bgr
+  path: /config/model_cache/nanodet_plus.onnx
+  labelmap_path: /labelmap/coco-80.txt
+```
+
+Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
+
+</details>
+
 
 ## Apple Silicon detector
 
@@ -719,6 +760,7 @@ detectors:
 | [YOLO-NAS](#yolo-nas-1)       | ⚠️         | ⚠️      | Not supported by CUDA Graphs                        |
 | [YOLOX](#yolox-1)             | ✅         | ✅      | Supports CUDA Graphs for optimal Nvidia performance |
 | [D-FINE / DEIMv2](#d-fine--deimv2-1) | ⚠️         | ❌      | Not supported by CUDA Graphs                        |
+| [NanoDet-Plus](#nanodet-plus-1) | ✅         | ?       | Supports CUDA Graphs for optimal Nvidia performance |
 
 There is no default model provided, the following formats are supported:
 
@@ -896,6 +938,42 @@ model:
 </details>
 
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
+
+#### NanoDet-Plus
+[NanoDet-Plus](https://github.com/RangiLyu/nanodet) is a lightweight object detection model that achieves
+good accuracy on CPUs given its small footprint.
+
+Script to export an ONNX model for use in Frigate is provided in [the models section](#downloading-nanodet-plus-models).
+:::warning
+
+NanoDet-Plus has not been tested on AMD GPUs.
+
+:::
+
+<details>
+  <summary>NanoDet-Plus Setup & Config</summary>
+
+After placing the exported onnx model in your config/model_cache folder, you can use the following configuration:
+
+```yaml
+detectors:
+  onnx:
+    type: onnx
+
+model:
+  model_type: nanodet_plus
+  width: 320
+  height: 320
+  input_tensor: nchw
+  input_dtype: float
+  input_pixel_format: bgr
+  path: /config/model_cache/nanodet_plus.onnx
+  labelmap_path: /labelmap/coco-80.txt
+```
+
+Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
+
+</details>
 
 ## CPU Detector (not recommended)
 
@@ -1700,6 +1778,16 @@ EOF
 ```
 
 ### Downloading NanoDet-Plus models
+NanoDet-Plus can be downloaded using the command below. Copy and paste the complete command to your terminal to export
+the model as `nanodet_plus.onnx` in the current working directory. The command builds the NanoDet-Plus environment,
+downloads the specified model and converts it to ONNX.
+
+The below command is configured to use the smallest model provided by the authors, NanoDet-Plus-m-320. Other models
+can be specified by changing the `URL_WEIGHTS` link to the appropriate pretrained weights URL from
+[NanoDet-Plus Model Zoo](https://github.com/RangiLyu/nanodet#model-zoo). Remember to change the `IMG_HEIGHT`,
+`IMG_WIDTH` and `CFG_PATH` ([configuration files](https://github.com/RangiLyu/nanodet/tree/main/config)) parameters
+accordingly.
+
 Compatible with the `labelmap/coco-80.txt` labelmap
 
 ```sh
